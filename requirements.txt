@@ -1,0 +1,12 @@
+AMU_VIEWER
+Autor: Michał Nieruchalski 462084
+Opis projektu:
+Celem projektu jest napisanie uproszczonego klona aplikacji "TeamViewer". Projekt będzie składał się z dwóch aplikacji. "Hosta" - który udostępnia swój komputer do zdalnej obsługi oraz "Klienta" - który może operować na maszynie Hosta.
+
+HOST:
+Język: C
+Nasłuchuje na połączenie na odpowiednim porcie. Wypisuje na ekran swój adres, port oraz kod dostępu. Po nawiązaniu połączenia cyklicznie wysyła zrzuty ekranu do klienta za pomocą transmisji bezpołączeniowej oraz oczekuję rozkazów od klienta np rusz myszką na zadane koordynaty, wciśnij dany przycisk na klawiaturze itp. Przewiduję oczywiście podstawową obsługę zdarzeń, kliknięcia myszy, klawiatury, scroll. Host będzie działał na systemie linux, wywoływanie odpowiednich zdarzeń zamierzam zrobić za pomocą biblioteki X11. Zaimplementowana zostanie również funkcjonalność odbioru pliku od klienta.
+
+KLIENT:
+Język: JAVA
+Udostępnia GUI (o technologii w jakiej narysuje okienka jeszcze nie zdecydowałem). Po podaniu ip, portu oraz kodu dostępu łączy się z danym hostem. Klient będzie posiadał system zakładek dzięki czemu możliwa będzie kontrola kilku hostów jednocześnie. Zaimplementowana zostanie również funkcjonalnośc wysyłki pliku do danego hosta.
