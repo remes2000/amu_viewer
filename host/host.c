@@ -13,10 +13,14 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+
 #define DEFAULT_TCP_PORT 1337
 #define DEFAULT_UDP_PORT DEFAULT_TCP_PORT + 1
+#define MAX_UDP_PACKET_SIZE 65535
 #define DEAFULT_INTERFACE "enp0s31f6"
 #define LOG(format, ...) printf("[%s] " format "\n", getFormattedTime(), ## __VA_ARGS__)
+#define JPEG_QUALITY 20
+#define JPEG_QUALITY_DOWNGRADE_STEP 3
 
 char* getFormattedTime(void) {
     time_t rawtime;
@@ -27,6 +31,11 @@ char* getFormattedTime(void) {
     strftime(_retval, sizeof(_retval), "%Y-%m-%d %H:%M:%S", timeinfo);
     return _retval;
 }
+
+struct frame {
+  unsigned char * image;
+  unsigned long image_size;
+};
 
 socklen_t socklen = sizeof(struct sockaddr_in);
 int setup(int argc, char **argv, struct sockaddr_in * tcp_host_address, struct sockaddr_in * udp_host_address, unsigned int * access_code, int * host_socket_tcp, int * host_socket_udp);
@@ -40,91 +49,8 @@ int authorize(int client_socket_tcp, unsigned int access_code);
 void set_udp_client_address(int client_socket_tcp, struct in_addr client_addr, struct sockaddr_in * udp_client_address);
 unsigned int read_integer(int client_socket_tcp);
 int begin_screen_broadcast(int host_socket_udp, struct sockaddr_in * udp_client_address);
-void send_frame(int host_socked_udp, struct sockaddr_in * udp_client_address);
-
-void write_jpeg_file(char * filename, int quality) {
-    /* x11 code */
-    Display *disp;
-    Window root;
-    XWindowAttributes gwa;
-    int scr;
-
-    // the display points to X server
-    disp = XOpenDisplay(0);
-    // the screen refers to which screen of display to use
-    scr = DefaultScreen(disp);
-    // the window controls the actual window itself
-    root = DefaultRootWindow(disp);
-
-    XGetWindowAttributes(disp, root, &gwa);
-    int width = gwa.width;
-    int height = gwa.height;
-    XImage *image = XGetImage(disp, root, 0, 0, width, height, AllPlanes, ZPixmap);
-
-    unsigned long red_mask = image->red_mask;
-    unsigned long green_mask = image->green_mask;
-    unsigned long blue_mask = image->blue_mask;
-
-    printf(" to allocate %d \n", width*height*3*sizeof(unsigned char));
-    unsigned char * image_buffer = (char *) malloc(width*height*3*sizeof(unsigned char));
-
-    long position = 0;
-
-    for(int y=0; y < height; y++) {
-        for(int x = 0; x < width; x++) {
-            unsigned long pixel = XGetPixel(image, x, y);
-            unsigned char blue = pixel & blue_mask;
-            unsigned char green = (pixel & green_mask) >> 8;
-            unsigned char red = (pixel & red_mask) >> 16;
-
-            image_buffer[position] = red;
-            image_buffer[position+1] = green;
-            image_buffer[position+2] = blue;
-
-            position += 3;
-        }
-    }
-
-    /* libjpg code */
-    struct jpeg_compress_struct cinfo;
-    struct jpeg_error_mgr jerr;
-    FILE * outfile;
-    JSAMPROW row_pointer[1];
-    int row_stride;
-
-    cinfo.err = jpeg_std_error(&jerr);
-    jpeg_create_compress(&cinfo);
-
-    if ((outfile = fopen(filename, "wb")) == NULL) {
-        fprintf(stderr, "can't open %s\n", filename);
-        exit(1);
-    }
-//    jpeg_stdio_dest(&cinfo, outfile);
-    unsigned char * result;
-    unsigned long size;
-    jpeg_mem_dest(&cinfo, &result, &size);
-
-    cinfo.image_width = width;
-    cinfo.image_height = height;
-    cinfo.input_components = 3;
-    cinfo.in_color_space = JCS_RGB;
-    jpeg_set_defaults(&cinfo);
-    jpeg_set_quality(&cinfo, quality, TRUE);
-    jpeg_start_compress(&cinfo, TRUE);
-
-    row_stride = width * 3;	/* JSAMPLEs per row in image_buffer */
-
-    while (cinfo.next_scanline < cinfo.image_height) {
-        row_pointer[0] = & image_buffer[cinfo.next_scanline * row_stride];
-        (void) jpeg_write_scanlines(&cinfo, row_pointer, 1);
-    }
-
-    jpeg_finish_compress(&cinfo);
-    fclose(outfile);
-    jpeg_destroy_compress(&cinfo);
-    free(image_buffer);
-    free(result);
-}
+int send_frame(int host_socket_udp, struct sockaddr_in * udp_client_address, int * jpeg_quality);
+void get_frame(struct frame * screen_frame, int quality);
 
 int main(int argc, char **argv) {
     struct sockaddr_in tcp_host_address, udp_host_address, tcp_client_address;
@@ -135,7 +61,6 @@ int main(int argc, char **argv) {
         printf("setup() failed \n");
         return -1;
     }
-
     say_hello(&tcp_host_address, &udp_host_address, access_code);
     LOG("Waiting for connection...");
     while((client_socket_tcp = accept(host_socket_tcp, (struct sockaddr*) &tcp_client_address, &socklen)) != -1) {
@@ -217,6 +142,7 @@ int setup_host_sockets(int * host_socket_tcp, int * host_socket_udp, struct sock
 
 int setup_access_code(unsigned int * access_code) {
     *access_code = (rand() % 901) + 100;
+    *access_code = 128;
     return 0;
 }
 
@@ -304,16 +230,104 @@ int begin_screen_broadcast(int host_socket_udp, struct sockaddr_in * udp_client_
         return -1;
     }
     if(pid == 0) {
-        while(1) {
-            send_frame(host_socket_udp, udp_client_address);
-            sleep(1);
+        int jpeg_quality = JPEG_QUALITY;
+        while(send_frame(host_socket_udp, udp_client_address, &jpeg_quality) != -1) {
+            usleep(300 * 1000);
         }
+        exit(0);
     }
+    printf("Child process %d \n", pid);
     return pid;
 }
 
-void send_frame(int host_socked_udp, struct sockaddr_in * udp_client_address) {
-    unsigned char * frame = "a";
-    unsigned long frame_size = 1;
-    sendto(host_socked_udp, frame, frame_size, 0, udp_client_address, sizeof(*udp_client_address));
+int send_frame(int host_socket_udp, struct sockaddr_in * udp_client_address, int * jpeg_quality) {
+    struct frame screen_frame;
+    get_frame(&screen_frame, *jpeg_quality);
+    if(screen_frame.image_size <= MAX_UDP_PACKET_SIZE) {
+        sendto(host_socket_udp, screen_frame.image, screen_frame.image_size, 0, (struct sockaddr*) udp_client_address, sizeof(*udp_client_address));
+    } else {
+        LOG("Frame could not be sent because of too big frame size (%d). Downgrading jpeg quality from %d to %d", screen_frame.image_size, *jpeg_quality, *jpeg_quality-JPEG_QUALITY_DOWNGRADE_STEP);
+        *jpeg_quality = *jpeg_quality - JPEG_QUALITY_DOWNGRADE_STEP;
+    }
+    free(screen_frame.image);
+    if(*jpeg_quality < 0) {
+        LOG("Screen sharing impossible");
+        return -1;
+    }
+    return 0;
+}
+
+void get_frame(struct frame * screen_frame, int quality) {
+    /* x11 code */
+    Display *disp;
+    Window root;
+    XWindowAttributes gwa;
+    int scr;
+
+    // the display points to X server
+    disp = XOpenDisplay(0);
+    // the screen refers to which screen of display to use
+    scr = DefaultScreen(disp);
+    // the window controls the actual window itself
+    root = DefaultRootWindow(disp);
+
+    XGetWindowAttributes(disp, root, &gwa);
+    int width = gwa.width;
+    int height = gwa.height;
+    XImage *image = XGetImage(disp, root, 0, 0, width, height, AllPlanes, ZPixmap);
+
+    unsigned long red_mask = image->red_mask;
+    unsigned long green_mask = image->green_mask;
+    unsigned long blue_mask = image->blue_mask;
+
+    unsigned char * image_buffer = (char *) malloc(width*height*3*sizeof(unsigned char));
+
+    long position = 0;
+
+    for(int y=0; y < height; y++) {
+        for(int x = 0; x < width; x++) {
+            unsigned long pixel = XGetPixel(image, x, y);
+            unsigned char blue = pixel & blue_mask;
+            unsigned char green = (pixel & green_mask) >> 8;
+            unsigned char red = (pixel & red_mask) >> 16;
+
+            image_buffer[position] = red;
+            image_buffer[position+1] = green;
+            image_buffer[position+2] = blue;
+
+            position += 3;
+        }
+    }
+
+    /* libjpg code */
+    struct jpeg_compress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+    JSAMPROW row_pointer[1];
+    int row_stride;
+
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_compress(&cinfo);
+
+    screen_frame->image = NULL;
+    screen_frame->image_size = 0;
+    jpeg_mem_dest(&cinfo, &screen_frame->image, &screen_frame->image_size);
+
+    cinfo.image_width = width;
+    cinfo.image_height = height;
+    cinfo.input_components = 3;
+    cinfo.in_color_space = JCS_RGB;
+    jpeg_set_defaults(&cinfo);
+    jpeg_set_quality(&cinfo, quality, TRUE);
+    jpeg_start_compress(&cinfo, TRUE);
+
+    row_stride = width * 3;	/* JSAMPLEs per row in image_buffer */
+
+    while (cinfo.next_scanline < cinfo.image_height) {
+        row_pointer[0] = & image_buffer[cinfo.next_scanline * row_stride];
+        (void) jpeg_write_scanlines(&cinfo, row_pointer, 1);
+    }
+
+    jpeg_finish_compress(&cinfo);
+    jpeg_destroy_compress(&cinfo);
+    free(image_buffer);
 }
