@@ -1,2 +1,4 @@
 host/.idea/
 host/host
+client/.idea
+client/target

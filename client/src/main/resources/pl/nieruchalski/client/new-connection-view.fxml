@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.*?>
+<?import java.util.*?>
+<?import javafx.scene.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<?import javafx.geometry.Insets?>
+<GridPane xmlns="http://javafx.com/javafx"
+          xmlns:fx="http://javafx.com/fxml"
+          fx:controller="pl.nieruchalski.client.NewConnectionController"
+          alignment="TOP_LEFT" hgap="10" vgap="10">
+
+    <padding><Insets right="25" top="10" bottom="10" left="25"/></padding>
+
+    <Label text="Host ip:"
+           GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+    <TextField
+            fx:id="ipAddress"
+            GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+
+    <Label text="Host port:"
+           GridPane.columnIndex="0" GridPane.rowIndex="3"/>
+    <TextField
+            fx:id="port"
+            GridPane.columnIndex="0" GridPane.rowIndex="4"/>
+
+    <Label text="Access code:"
+           GridPane.columnIndex="0" GridPane.rowIndex="5"/>
+    <TextField
+            fx:id="accessCode"
+            GridPane.columnIndex="0" GridPane.rowIndex="6"/>
+
+    <Label fx:id="errorMessage"
+        GridPane.columnIndex="0" GridPane.rowIndex="7" style="-fx-text-fill: red; -fx-font-weight: bold;"/>
+
+    <Button text="Connect"
+            onMouseClicked="#submit"
+            GridPane.columnIndex="0" GridPane.rowIndex="8"/>
+</GridPane>
