@@ -10,7 +10,7 @@
 <GridPane xmlns="http://javafx.com/javafx"
           xmlns:fx="http://javafx.com/fxml"
           fx:controller="pl.nieruchalski.client.NewConnectionController"
-          alignment="TOP_LEFT" hgap="10" vgap="10">
+          alignment="center" hgap="10" vgap="10">
 
     <padding><Insets right="25" top="10" bottom="10" left="25"/></padding>
 
@@ -33,9 +33,11 @@
             GridPane.columnIndex="0" GridPane.rowIndex="6"/>
 
     <Label fx:id="errorMessage"
-        GridPane.columnIndex="0" GridPane.rowIndex="7" style="-fx-text-fill: red; -fx-font-weight: bold;"/>
+        GridPane.columnIndex="0" GridPane.rowIndex="7" style="-fx-text-fill: red; -fx-font-weight: bold;"
+        wrapText="true" />
 
-    <Button text="Connect"
+    <Button fx:id="submitButton"
+            text="Connect"
             onMouseClicked="#submit"
             GridPane.columnIndex="0" GridPane.rowIndex="8"/>
 </GridPane>

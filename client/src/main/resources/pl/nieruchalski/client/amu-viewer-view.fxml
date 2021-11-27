@@ -11,18 +11,29 @@
 <?import javafx.scene.control.MenuBar?>
 <?import javafx.scene.control.Menu?>
 <?import javafx.scene.control.MenuItem?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.canvas.Canvas?>
 <BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="pl.nieruchalski.client.AmuViewerController">
     <top>
-        <MenuBar>
-            <Menu text="Connection">
-                <items>
-                    <MenuItem text="Establish new connection"  onAction="#openNewConnectionDialog"/>
-                </items>
-            </Menu>
-        </MenuBar>
-<!--        <TabPane fx:id="tabPane" />-->
+        <BorderPane>
+            <top>
+                <MenuBar>
+                    <Menu text="Connection">
+                        <items>
+                            <MenuItem text="Establish new connection"  onAction="#openNewConnectionDialog"/>
+                        </items>
+                    </Menu>
+                </MenuBar>
+            </top>
+            <bottom>
+                <TabPane fx:id="tabPane" />
+            </bottom>
+        </BorderPane>
     </top>
-    <center>
-        <Button text="Hello!" onAction="#onHelloButtonClick"/>
-    </center>
+    <left>
+        <Canvas fx:id="display" />
+    </left>
+    <bottom>
+        <Label fx:id="udpPortLabel"></Label>
+    </bottom>
 </BorderPane>

@@ -5,24 +5,41 @@ import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.canvas.Canvas;
+import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.image.Image;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import pl.nieruchalski.client.domain.publisher.GeneralPublisher;
+import pl.nieruchalski.client.domain.publisher.NewConnectionPublisher;
+import pl.nieruchalski.client.domain.publisher.NewFramePublisher;
+import pl.nieruchalski.client.domain.service.ConnectionService;
+import pl.nieruchalski.client.domain.subscriber.GeneralSubscriber;
+import pl.nieruchalski.client.domain.subscriber.NewConnectionSubscriber;
+import pl.nieruchalski.client.domain.subscriber.NewFrameSubscriber;
+import pl.nieruchalski.client.domain.values.event.Frame;
+import pl.nieruchalski.client.domain.values.event.ViewerHost;
+import pl.nieruchalski.client.domain.values.event.general.UdpPortChange;
 
-import java.io.IOException;
+import java.io.*;
 
-public class AmuViewerController {
+public class AmuViewerController implements NewConnectionSubscriber, NewFrameSubscriber, GeneralSubscriber {
     @FXML
     private TabPane tabPane;
 
-    public void initialize() {
-//        tabPane.getTabs().add(new Tab("First tab"));
-    }
+    @FXML
+    private Canvas display;
 
     @FXML
-    protected void onHelloButtonClick() {
-        tabPane.getTabs().add(new Tab("Tab 1"));
+    private Label udpPortLabel;
+
+    public void initialize() {
+        NewConnectionPublisher.getInstance().subscribe(this);
+        NewFramePublisher.getInstance().subscribe(this);
+        GeneralPublisher.getInstance().subscribe(this);
+        ConnectionService.getInstance();
     }
 
     @FXML
@@ -31,11 +48,30 @@ public class AmuViewerController {
             Stage stage = new Stage();
             Parent root = FXMLLoader.load(AmuViewerClientApplication.class.getResource("new-connection-view.fxml"));
             stage.setScene(new Scene(root));
+            stage.setWidth(400);
             stage.setTitle("Establishing new connection");
             stage.initModality(Modality.APPLICATION_MODAL);
             stage.show();
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    @Override
+    public void handleNewConnection(ViewerHost viewerHost) {
+        tabPane.getTabs().add(new Tab(viewerHost.getName()));
+    }
+
+    @Override
+    public void handleNewFrame(Frame frame) {
+        Image image = new Image(new ByteArrayInputStream(frame.buffer));
+        display.setWidth(image.getWidth());
+        display.setHeight(image.getHeight());
+        display.getGraphicsContext2D().drawImage(image, 0, 0, image.getWidth(), image.getHeight());
+    }
+
+    @Override
+    public void handleUdpPortChange(UdpPortChange udpPortChange) {
+        this.udpPortLabel.setText("UDP: " + udpPortChange.getPort());
     }
 }
