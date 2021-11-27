@@ -65,6 +65,7 @@ int main(int argc, char **argv) {
     LOG("Waiting for connection...");
     while((client_socket_tcp = accept(host_socket_tcp, (struct sockaddr*) &tcp_client_address, &socklen)) != -1) {
         handle_connection(host_socket_tcp, host_socket_udp, client_socket_tcp, &tcp_client_address, access_code);
+        close(client_socket_tcp);
         LOG("Waiting for connection...");
     }
     printf("accept() failed");
@@ -174,28 +175,47 @@ void say_hello(struct sockaddr_in * tcp_host_address, struct sockaddr_in * udp_h
 void handle_connection(int host_socket_tcp, int host_socket_udp, int client_socket_tcp, struct sockaddr_in * tcp_client_address, unsigned int access_code) {
     struct sockaddr_in udp_client_address;
     pid_t screen_broadcast_process;
+    int authorization_result;
 
     LOG("Client %s connected", inet_ntoa(tcp_client_address->sin_addr));
-    if(authorize(client_socket_tcp, access_code) == 1) {
+    authorization_result = authorize(client_socket_tcp, access_code);
+    if(authorization_result == -1) {
+        LOG("Authorization error");
+        return;
+    }
+    if(authorization_result == 1) {
         set_udp_client_address(client_socket_tcp, tcp_client_address->sin_addr, &udp_client_address);
         screen_broadcast_process = begin_screen_broadcast(host_socket_udp, &udp_client_address);
         if(screen_broadcast_process == -1) {
             LOG("An error occured while starting screen broadcast");
             return;
         }
+        unsigned char * buf;
+        while(1) {
+            if(recv(client_socket_tcp, buf, 1, 0) == 1) {
+                LOG("Message from client: %x", buf);
+            }
+        }
     }
 }
 
 int authorize(int client_socket_tcp, unsigned int access_code) {
+    uint8_t authorization_result;
+
     LOG("Waiting for access code...");
     unsigned int provided_access_code = read_integer(client_socket_tcp);
     LOG("Provided access code: %u", provided_access_code);
     if(provided_access_code == access_code) {
         LOG("Access granted");
-        return 1;
+        authorization_result = 1;
+    } else {
+        LOG("Permission denied");
+        authorization_result = 0;
     }
-    LOG("Permission denied");
-    return 0;
+    if(send(client_socket_tcp, &authorization_result, sizeof(authorization_result), 0) != sizeof(authorization_result)) {
+        return -1;
+    }
+    return authorization_result;
 }
 
 void set_udp_client_address(int client_socket_tcp, struct in_addr client_addr, struct sockaddr_in * udp_client_address) {
