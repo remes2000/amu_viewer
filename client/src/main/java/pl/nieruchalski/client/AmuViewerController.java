@@ -12,6 +12,7 @@ import javafx.scene.control.TabPane;
 import javafx.scene.image.Image;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import pl.nieruchalski.client.domain.exception.CannotCloseConnectionWithHostException;
 import pl.nieruchalski.client.domain.publisher.GeneralPublisher;
 import pl.nieruchalski.client.domain.publisher.NewConnectionPublisher;
 import pl.nieruchalski.client.domain.publisher.NewFramePublisher;
@@ -59,12 +60,20 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
 
     @Override
     public void handleNewConnection(ViewerHost viewerHost) {
+        Tab connectionTab = new Tab(viewerHost.getName());
+        connectionTab.setOnCloseRequest(e -> {
+            try {
+                ConnectionService.getInstance().closeConnection(viewerHost);
+            } catch (CannotCloseConnectionWithHostException exception) {
+                e.consume();
+            }
+        });
         tabPane.getTabs().add(new Tab(viewerHost.getName()));
     }
 
     @Override
-    public void handleNewFrame(Frame frame) {
-        Image image = new Image(new ByteArrayInputStream(frame.buffer));
+    public void handleNewFrame(ViewerHost host) {
+        Image image = new Image(new ByteArrayInputStream(host.getLastFrame().buffer));
         display.setWidth(image.getWidth());
         display.setHeight(image.getHeight());
         display.getGraphicsContext2D().drawImage(image, 0, 0, image.getWidth(), image.getHeight());

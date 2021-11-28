@@ -1,6 +1,7 @@
 package pl.nieruchalski.client.domain.service;
 
 import javafx.application.Platform;
+import pl.nieruchalski.client.domain.exception.CannotCloseConnectionWithHostException;
 import pl.nieruchalski.client.domain.exception.CannotOpenUdpSocketException;
 import pl.nieruchalski.client.domain.exception.EstablishConnectionException;
 import pl.nieruchalski.client.domain.exception.HostRefusedAccessCodeException;
@@ -52,13 +53,21 @@ public class ConnectionService {
             DataInputStream inputStream = new DataInputStream(socket.getInputStream());
             outputStream.writeInt(connectionRequest.getAccessCode());
             if(inputStream.readByte() == 0) {
+                socket.close();
                 throw new HostRefusedAccessCodeException();
             }
+            Integer clientUdpPort = inputStream.readUnsignedShort();
             outputStream.writeInt(this.udpSocket.getLocalPort());
-            ViewerHost host = new ViewerHost(socket);
+            ViewerHost host = new ViewerHost(socket, clientUdpPort);
+            HostManager.getInstance().registerHost(host);
             NewConnectionPublisher.getInstance().broadcast(host);
         } catch (IOException e) {
             throw new EstablishConnectionException();
         }
+    }
+
+    public void closeConnection(ViewerHost host) throws CannotCloseConnectionWithHostException {
+        host.close();
+        HostManager.getInstance().unregisterHost(host);
     }
 }

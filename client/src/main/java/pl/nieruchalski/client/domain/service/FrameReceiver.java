@@ -3,6 +3,7 @@ package pl.nieruchalski.client.domain.service;
 import javafx.application.Platform;
 import pl.nieruchalski.client.domain.publisher.NewFramePublisher;
 import pl.nieruchalski.client.domain.values.event.Frame;
+import pl.nieruchalski.client.domain.values.event.ViewerHost;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -24,9 +25,16 @@ public class FrameReceiver extends Thread {
         while(true) {
             try {
                 this.socket.receive(packet);
-                Platform.runLater(() -> {
-                    NewFramePublisher.getInstance().broadcast(new Frame(packet));
-                });
+                Frame receivedFrame = new Frame(packet);
+                ViewerHost packetSender = HostManager.getInstance().getPacketSender(packet);
+                if(packetSender != null) {
+                    packetSender.setLastFrame(receivedFrame);
+                    Platform.runLater(() -> {
+                        NewFramePublisher.getInstance().broadcast(packetSender);
+                    });
+                } else {
+                    System.out.println("Udp message from unknown host ignored.");
+                }
             } catch (IOException e) {
                 System.err.println("An error occured while receiving frame via udp");
             }
