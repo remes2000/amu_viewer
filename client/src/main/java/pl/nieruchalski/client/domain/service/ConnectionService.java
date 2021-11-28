@@ -57,7 +57,7 @@ public class ConnectionService {
                 throw new HostRefusedAccessCodeException();
             }
             Integer clientUdpPort = inputStream.readUnsignedShort();
-            outputStream.writeInt(this.udpSocket.getLocalPort());
+            outputStream.writeShort(this.udpSocket.getLocalPort());
             ViewerHost host = new ViewerHost(socket, clientUdpPort);
             HostManager.getInstance().registerHost(host);
             NewConnectionPublisher.getInstance().broadcast(host);

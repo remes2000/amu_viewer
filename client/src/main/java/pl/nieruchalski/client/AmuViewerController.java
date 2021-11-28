@@ -6,7 +6,9 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
+import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.image.Image;
@@ -25,6 +27,10 @@ import pl.nieruchalski.client.domain.values.event.ViewerHost;
 import pl.nieruchalski.client.domain.values.event.general.UdpPortChange;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.Map;
 
 public class AmuViewerController implements NewConnectionSubscriber, NewFrameSubscriber, GeneralSubscriber {
     @FXML
@@ -34,13 +40,30 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
     private Canvas display;
 
     @FXML
+    private ScrollPane displayContainer;
+
+    @FXML
     private Label udpPortLabel;
+
+    private Map<Tab, ViewerHost> tabHostMap = new HashMap();
+    private ViewerHost activeHost;
 
     public void initialize() {
         NewConnectionPublisher.getInstance().subscribe(this);
         NewFramePublisher.getInstance().subscribe(this);
         GeneralPublisher.getInstance().subscribe(this);
         ConnectionService.getInstance();
+        this.displayContainer.setMaxWidth(AmuViewerClientApplication.VIEWER_WIDTH);
+        this.displayContainer.setMinWidth(AmuViewerClientApplication.VIEWER_WIDTH);
+        this.clearCanvas();
+        tabPane.getSelectionModel().selectedItemProperty().addListener((ov, oldTab, newTab) -> {
+            this.activeHost = this.tabHostMap.get(newTab);
+            if(this.activeHost != null) {
+                this.renderHost(this.activeHost);
+            } else {
+                this.clearCanvas();
+            }
+        });
     }
 
     @FXML
@@ -64,23 +87,48 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
         connectionTab.setOnCloseRequest(e -> {
             try {
                 ConnectionService.getInstance().closeConnection(viewerHost);
+                this.tabHostMap.remove(connectionTab);
             } catch (CannotCloseConnectionWithHostException exception) {
                 e.consume();
             }
         });
-        tabPane.getTabs().add(new Tab(viewerHost.getName()));
+        this.activeHost = viewerHost;
+        this.tabHostMap.put(connectionTab, viewerHost);
+        tabPane.getTabs().add(connectionTab);
+        tabPane.getSelectionModel().select(connectionTab);
     }
 
     @Override
     public void handleNewFrame(ViewerHost host) {
-        Image image = new Image(new ByteArrayInputStream(host.getLastFrame().buffer));
-        display.setWidth(image.getWidth());
-        display.setHeight(image.getHeight());
-        display.getGraphicsContext2D().drawImage(image, 0, 0, image.getWidth(), image.getHeight());
+        if(activeHost == host) {
+            this.renderHost(host);
+        }
     }
 
     @Override
     public void handleUdpPortChange(UdpPortChange udpPortChange) {
         this.udpPortLabel.setText("UDP: " + udpPortChange.getPort());
+    }
+
+    private void renderHost(ViewerHost host) {
+        if(host.getLastFrame() != null) {
+            this.renderFrame(host.getLastFrame());
+        } else {
+            this.clearCanvas();
+        }
+    }
+
+    private void renderFrame(Frame frame) {
+        this.displayContainer.setVisible(true);
+        Image image = new Image(new ByteArrayInputStream(frame.buffer));
+        display.setWidth(image.getWidth());
+        display.setHeight(image.getHeight());
+        display.getGraphicsContext2D().drawImage(image, 0, 0, image.getWidth(), image.getHeight());
+    }
+
+    private void clearCanvas() {
+        this.displayContainer.setVisible(false);
+        this.display.setWidth(0);
+        this.display.setHeight(0);
     }
 }

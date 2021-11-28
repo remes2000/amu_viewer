@@ -71,6 +71,7 @@ int read_unsigned_short(int tcp_socket, unsigned short * dest);
 int read_n_bytes(int tcp_socket, unsigned char * dest, unsigned int n);
 int begin_screen_broadcast(struct amu_viewer_setup * viewer_setup, pid_t * broadcast_pid);
 int send_frame(struct amu_viewer_setup * viewer_setup, int * jpeg_quality);
+void send_transmission_over_udp_not_possible_message(struct amu_viewer_setup * viewer_setup);
 void get_frame(struct frame * screen_frame, int quality, struct screen * screen_details);
 
 int main(int argc, char **argv) {
@@ -332,10 +333,35 @@ int send_frame(struct amu_viewer_setup * viewer_setup, int * jpeg_quality) {
     }
     free(screen_frame.image);
     if(*jpeg_quality < 0) {
+        send_transmission_over_udp_not_possible_message(viewer_setup);
         LOG("Screen sharing impossible");
         return -1;
     }
     return 0;
+}
+
+void send_transmission_over_udp_not_possible_message(struct amu_viewer_setup * viewer_setup) {
+    FILE * image_file;
+    char * buffer;
+    long file_size;
+
+    if((image_file = fopen("./resources/transmission_not_possible.jpg", "r")) == NULL) {
+        return;
+    }
+    fseek(image_file, 0L, SEEK_END);
+    file_size = ftell(image_file);
+    fseek(image_file, 0L, SEEK_SET);
+    buffer = (char *)calloc(file_size, sizeof(char));
+    fread(buffer, sizeof(char), file_size, image_file);
+    fclose(image_file);
+
+    sendto(viewer_setup->host_socket_udp,
+           buffer,
+           file_size,
+           0,
+           (struct sockaddr*) &viewer_setup->udp_client_address,
+           sizeof(viewer_setup->udp_client_address));
+    free(buffer);
 }
 
 void get_frame(struct frame * screen_frame, int quality, struct screen * screen_details) {

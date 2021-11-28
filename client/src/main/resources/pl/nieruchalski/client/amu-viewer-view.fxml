@@ -13,6 +13,8 @@
 <?import javafx.scene.control.MenuItem?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.canvas.Canvas?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.ScrollPane?>
 <BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="pl.nieruchalski.client.AmuViewerController">
     <top>
         <BorderPane>
@@ -31,7 +33,9 @@
         </BorderPane>
     </top>
     <left>
-        <Canvas fx:id="display" />
+        <ScrollPane fx:id="displayContainer">
+            <Canvas fx:id="display" />
+        </ScrollPane>
     </left>
     <bottom>
         <Label fx:id="udpPortLabel"></Label>
