@@ -37,34 +37,42 @@ struct frame {
   unsigned long image_size;
 };
 
+struct screen {
+    Display * disp;
+    Window root;
+    int scr;
+};
+
 socklen_t socklen = sizeof(struct sockaddr_in);
-int setup(int argc, char **argv, struct sockaddr_in * tcp_host_address, struct sockaddr_in * udp_host_address, unsigned int * access_code, int * host_socket_tcp, int * host_socket_udp);
+int setup(int argc, char **argv, struct sockaddr_in * tcp_host_address, struct sockaddr_in * udp_host_address, unsigned int * access_code, int * host_socket_tcp, int * host_socket_udp, struct screen * screen_details);
 int setup_host_address(int argc, char **argv, struct sockaddr_in * tcp_host_address, struct sockaddr_in * udp_host_address);
-int setup_access_code(unsigned int * access_code);
+void setup_screen_details(struct screen * screen_details);
+void setup_access_code(unsigned int * access_code);
 int setup_host_sockets(int * host_socket_tcp, int * host_socket_udp, struct sockaddr_in * tcp_host_address, struct sockaddr_in * udp_host_address);
 int find_interface(char * interface, struct in_addr ** address);
 void say_hello(struct sockaddr_in * tcp_host_address, struct sockaddr_in * udp_host_address, unsigned int access_code);
-void handle_connection(int host_socket_tcp, int host_socket_udp, int client_socket_tcp, struct sockaddr_in * tcp_client_address, unsigned int access_code);
+void handle_connection(int host_socket_tcp, int host_socket_udp, int client_socket_tcp, struct sockaddr_in * tcp_client_address, unsigned int access_code, struct screen * screen_details);
 int authorize(int client_socket_tcp, unsigned int access_code);
 void set_udp_client_address(int client_socket_tcp, struct in_addr client_addr, struct sockaddr_in * udp_client_address);
 unsigned int read_integer(int client_socket_tcp);
-int begin_screen_broadcast(int host_socket_udp, struct sockaddr_in * udp_client_address);
-int send_frame(int host_socket_udp, struct sockaddr_in * udp_client_address, int * jpeg_quality);
-void get_frame(struct frame * screen_frame, int quality);
+int begin_screen_broadcast(int host_socket_udp, struct sockaddr_in * udp_client_address, struct screen * screen_details);
+int send_frame(int host_socket_udp, struct sockaddr_in * udp_client_address, int * jpeg_quality, struct screen * screen_details);
+void get_frame(struct frame * screen_frame, int quality, struct screen * screen_details);
 
 int main(int argc, char **argv) {
     struct sockaddr_in tcp_host_address, udp_host_address, tcp_client_address;
     unsigned int access_code;
     int host_socket_tcp, host_socket_udp, client_socket_tcp;
+    struct screen screen_details;
     srand(time(NULL));
-    if(setup(argc, argv, &tcp_host_address, &udp_host_address, &access_code, &host_socket_tcp, &host_socket_udp) == -1) {
+    if(setup(argc, argv, &tcp_host_address, &udp_host_address, &access_code, &host_socket_tcp, &host_socket_udp, &screen_details) == -1) {
         printf("setup() failed \n");
         return -1;
     }
     say_hello(&tcp_host_address, &udp_host_address, access_code);
     LOG("Waiting for connection...");
     while((client_socket_tcp = accept(host_socket_tcp, (struct sockaddr*) &tcp_client_address, &socklen)) != -1) {
-        handle_connection(host_socket_tcp, host_socket_udp, client_socket_tcp, &tcp_client_address, access_code);
+        handle_connection(host_socket_tcp, host_socket_udp, client_socket_tcp, &tcp_client_address, access_code, &screen_details);
         close(client_socket_tcp);
         LOG("Waiting for connection...");
     }
@@ -75,13 +83,14 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-int setup(int argc, char **argv, struct sockaddr_in * tcp_host_address, struct sockaddr_in * udp_host_address, unsigned int * access_code, int * host_socket_tcp, int * host_socket_udp) {
+int setup(int argc, char **argv, struct sockaddr_in * tcp_host_address, struct sockaddr_in * udp_host_address, unsigned int * access_code, int * host_socket_tcp, int * host_socket_udp, struct screen * screen_details) {
     if(setup_host_address(argc, argv, tcp_host_address, udp_host_address) == -1) {
         return -1;
     }
     if(setup_host_sockets(host_socket_tcp, host_socket_udp, tcp_host_address, udp_host_address) == -1) {
         return -1;
     }
+    setup_screen_details(screen_details);
     setup_access_code(access_code);
     return 0;
 }
@@ -141,10 +150,15 @@ int setup_host_sockets(int * host_socket_tcp, int * host_socket_udp, struct sock
     return 0;
 }
 
-int setup_access_code(unsigned int * access_code) {
+void setup_screen_details(struct screen * screen_details) {
+    screen_details->disp = XOpenDisplay(0);
+    screen_details->scr = DefaultScreen(screen_details->disp);
+    screen_details->root = DefaultRootWindow(screen_details->disp);
+}
+
+void setup_access_code(unsigned int * access_code) {
     *access_code = (rand() % 901) + 100;
     *access_code = 128;
-    return 0;
 }
 
 int find_interface(char * interface_name, struct in_addr ** address) {
@@ -172,7 +186,7 @@ void say_hello(struct sockaddr_in * tcp_host_address, struct sockaddr_in * udp_h
     printf("Access code = %d\n", access_code);
 }
 
-void handle_connection(int host_socket_tcp, int host_socket_udp, int client_socket_tcp, struct sockaddr_in * tcp_client_address, unsigned int access_code) {
+void handle_connection(int host_socket_tcp, int host_socket_udp, int client_socket_tcp, struct sockaddr_in * tcp_client_address, unsigned int access_code, struct screen * screen_details) {
     struct sockaddr_in udp_client_address;
     pid_t screen_broadcast_process;
     int authorization_result;
@@ -185,7 +199,7 @@ void handle_connection(int host_socket_tcp, int host_socket_udp, int client_sock
     }
     if(authorization_result == 1) {
         set_udp_client_address(client_socket_tcp, tcp_client_address->sin_addr, &udp_client_address);
-        screen_broadcast_process = begin_screen_broadcast(host_socket_udp, &udp_client_address);
+        screen_broadcast_process = begin_screen_broadcast(host_socket_udp, &udp_client_address, screen_details);
         if(screen_broadcast_process == -1) {
             LOG("An error occured while starting screen broadcast");
             return;
@@ -242,7 +256,7 @@ unsigned int read_integer(int client_socket_tcp) {
     return ntohl(*((unsigned int *) buffer));
 }
 
-int begin_screen_broadcast(int host_socket_udp, struct sockaddr_in * udp_client_address) {
+int begin_screen_broadcast(int host_socket_udp, struct sockaddr_in * udp_client_address, struct screen * screen_details) {
     LOG("Begin screen broadcast, creating child process...");
     pid_t pid;
     if((pid = fork()) == -1) {
@@ -251,18 +265,18 @@ int begin_screen_broadcast(int host_socket_udp, struct sockaddr_in * udp_client_
     }
     if(pid == 0) {
         int jpeg_quality = JPEG_QUALITY;
-        while(send_frame(host_socket_udp, udp_client_address, &jpeg_quality) != -1) {
+        while(send_frame(host_socket_udp, udp_client_address, &jpeg_quality, screen_details) != -1) {
             usleep(300 * 1000);
         }
         exit(0);
     }
-    printf("Child process %d \n", pid);
+    LOG("Screen broadcast process pid = &d", pid);
     return pid;
 }
 
-int send_frame(int host_socket_udp, struct sockaddr_in * udp_client_address, int * jpeg_quality) {
+int send_frame(int host_socket_udp, struct sockaddr_in * udp_client_address, int * jpeg_quality, struct screen * screen_details) {
     struct frame screen_frame;
-    get_frame(&screen_frame, *jpeg_quality);
+    get_frame(&screen_frame, *jpeg_quality, screen_details);
     if(screen_frame.image_size <= MAX_UDP_PACKET_SIZE) {
         sendto(host_socket_udp, screen_frame.image, screen_frame.image_size, 0, (struct sockaddr*) udp_client_address, sizeof(*udp_client_address));
     } else {
@@ -277,24 +291,13 @@ int send_frame(int host_socket_udp, struct sockaddr_in * udp_client_address, int
     return 0;
 }
 
-void get_frame(struct frame * screen_frame, int quality) {
+void get_frame(struct frame * screen_frame, int quality, struct screen * screen_details) {
     /* x11 code */
-    Display *disp;
-    Window root;
     XWindowAttributes gwa;
-    int scr;
-
-    // the display points to X server
-    disp = XOpenDisplay(0);
-    // the screen refers to which screen of display to use
-    scr = DefaultScreen(disp);
-    // the window controls the actual window itself
-    root = DefaultRootWindow(disp);
-
-    XGetWindowAttributes(disp, root, &gwa);
+    XGetWindowAttributes(screen_details->disp, screen_details->root, &gwa);
     int width = gwa.width;
     int height = gwa.height;
-    XImage *image = XGetImage(disp, root, 0, 0, width, height, AllPlanes, ZPixmap);
+    XImage *image = XGetImage(screen_details->disp, screen_details->root, 0, 0, width, height, AllPlanes, ZPixmap);
 
     unsigned long red_mask = image->red_mask;
     unsigned long green_mask = image->green_mask;
