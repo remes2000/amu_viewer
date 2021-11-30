@@ -60,4 +60,8 @@ public class ViewerHost implements AutoCloseable {
     public void setLastFrame(Frame lastFrame) {
         this.lastFrame = lastFrame;
     }
+
+    public Integer getId() {
+        return this.id;
+    }
 }

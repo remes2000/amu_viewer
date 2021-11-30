@@ -1,6 +1,7 @@
 package pl.nieruchalski.client.domain.values.event;
 
 import java.net.DatagramPacket;
+import java.util.Arrays;
 
 public class Frame {
     public byte[] buffer;
@@ -14,6 +15,6 @@ public class Frame {
     }
 
     public Frame(DatagramPacket packet) {
-        this(packet.getData(), packet.getAddress().getCanonicalHostName(), packet.getPort());
+        this(Arrays.copyOf(packet.getData(), packet.getLength()), packet.getAddress().getCanonicalHostName(), packet.getPort());
     }
 }

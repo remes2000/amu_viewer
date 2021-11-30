@@ -19,8 +19,8 @@
 #define MAX_UDP_PACKET_SIZE 65535
 #define DEAFULT_INTERFACE "enp0s31f6"
 #define LOG(format, ...) printf("[%s] " format "\n", getFormattedTime(), ## __VA_ARGS__)
-#define JPEG_QUALITY 20
-#define JPEG_QUALITY_DOWNGRADE_STEP 3
+#define JPEG_START_QUALITY 20
+#define JPEG_DOWN_QUALITY 5
 
 char* getFormattedTime(void) {
     time_t rawtime;
@@ -38,6 +38,11 @@ struct screen {
     int scr;
 };
 
+struct frame_settings {
+    int jpeg_quality;
+    int scale;
+};
+
 struct amu_viewer_setup {
     unsigned int access_code;
     int host_socket_tcp;
@@ -48,6 +53,13 @@ struct amu_viewer_setup {
     struct sockaddr_in tcp_client_address;
     struct sockaddr_in udp_client_address;
     struct screen screen_details;
+    int is_broadcast_possible;
+    struct frame_settings frame_settings;
+};
+
+struct screen_image {
+    XImage * image;
+    XWindowAttributes window_attributes;
 };
 
 struct frame {
@@ -59,6 +71,8 @@ socklen_t socklen = sizeof(struct sockaddr_in);
 int setup(int argc, char **argv, struct amu_viewer_setup * viewer_setup);
 int setup_host_address(int argc, char **argv, struct amu_viewer_setup * viewer_setup);
 void setup_screen_details(struct amu_viewer_setup * viewer_setup);
+void setup_adjust_frame_settings(struct amu_viewer_setup * viewer_setup);
+void get_screen_image(struct screen * screen_details, struct screen_image * raw_screen_image);
 void setup_access_code(struct amu_viewer_setup * viewer_setup);
 int setup_host_sockets(struct amu_viewer_setup * viewer_setup);
 int find_interface(char * interface, struct in_addr ** address);
@@ -70,14 +84,13 @@ int read_unsigned_int(int tcp_socket, unsigned int * dest);
 int read_unsigned_short(int tcp_socket, unsigned short * dest);
 int read_n_bytes(int tcp_socket, unsigned char * dest, unsigned int n);
 int begin_screen_broadcast(struct amu_viewer_setup * viewer_setup, pid_t * broadcast_pid);
-int send_frame(struct amu_viewer_setup * viewer_setup, int * jpeg_quality);
+void send_frame(struct amu_viewer_setup * viewer_setup);
 void send_transmission_over_udp_not_possible_message(struct amu_viewer_setup * viewer_setup);
-void get_frame(struct frame * screen_frame, int quality, struct screen * screen_details);
+void get_frame(struct frame * screen_frame, struct screen_image * screen_image, int quality, int scale);
 
 int main(int argc, char **argv) {
     srand(time(NULL));
     struct amu_viewer_setup viewer_setup;
-
     if(setup(argc, argv, &viewer_setup) == -1) {
         printf("setup() failed \n");
         return -1;
@@ -104,6 +117,7 @@ int setup(int argc, char **argv, struct amu_viewer_setup * viewer_setup) {
         return -1;
     }
     setup_screen_details(viewer_setup);
+    setup_adjust_frame_settings(viewer_setup);
     setup_access_code(viewer_setup);
     return 0;
 }
@@ -174,6 +188,38 @@ void setup_access_code(struct amu_viewer_setup * viewer_setup) {
     viewer_setup->access_code = 128;
 }
 
+void setup_adjust_frame_settings(struct amu_viewer_setup * viewer_setup) {
+    int scale_possibilities[] = {1, 2, 4, 8, 16};
+    struct screen_image raw_screen_image;
+    struct frame frame;
+    get_screen_image(&viewer_setup->screen_details, &raw_screen_image);
+
+    for(int i=0; i<5; i++) {
+        int scale = scale_possibilities[i];
+        int quality = JPEG_START_QUALITY;
+        while(quality >= JPEG_DOWN_QUALITY) {
+            get_frame(&frame, &raw_screen_image, quality, scale);
+            // LOG("scale = %d quality = %d [%d]", scale, quality, frame.image_size);
+            free(frame.image);
+            if(frame.image_size <= MAX_UDP_PACKET_SIZE) {
+                viewer_setup->frame_settings.jpeg_quality = quality;
+                viewer_setup->frame_settings.scale = scale;
+                viewer_setup->is_broadcast_possible = 1;
+                return;
+            }
+            quality--;
+        }
+    }
+    viewer_setup->is_broadcast_possible = 0;
+}
+
+void get_screen_image(struct screen * screen_details, struct screen_image * raw_screen_image) {
+    XWindowAttributes gwa;
+    XGetWindowAttributes(screen_details->disp, screen_details->root, &gwa);
+    raw_screen_image->image = XGetImage(screen_details->disp, screen_details->root, 0, 0, gwa.width, gwa.height, AllPlanes, ZPixmap);
+    raw_screen_image->window_attributes = gwa;
+}
+
 int find_interface(char * interface_name, struct in_addr ** address) {
     struct ifaddrs *ifaddr, *ifa;
     struct sockaddr_in *sa;
@@ -197,6 +243,11 @@ void say_hello(struct amu_viewer_setup * viewer_setup) {
     printf("Listening on %s:%d \n", inet_ntoa(viewer_setup->tcp_host_address.sin_addr), ntohs(viewer_setup->tcp_host_address.sin_port));
     printf("UDP port: %d \n", ntohs(viewer_setup->udp_host_address.sin_port));
     printf("Access code = %d\n", viewer_setup->access_code);
+    if(viewer_setup->is_broadcast_possible) {
+        printf("Frames will be sending in jpeg files, scale = %d quality = %d \n", viewer_setup->frame_settings.scale, viewer_setup->frame_settings.jpeg_quality);
+    } else {
+        printf("Frames transmission via udp is not possible because of too big screen size \n");
+    }
 }
 
 void handle_connection(struct amu_viewer_setup * viewer_setup) {
@@ -218,9 +269,13 @@ void handle_connection(struct amu_viewer_setup * viewer_setup) {
             LOG("An error occured while reading client udp port");
             return;
         }
-        if(begin_screen_broadcast(viewer_setup, &screen_broadcast_process) == -1) {
-            LOG("An error occured while starting screen broadcast");
-            return;
+        if(viewer_setup->is_broadcast_possible) {
+            if(begin_screen_broadcast(viewer_setup, &screen_broadcast_process) == -1) {
+                LOG("An error occured while starting screen broadcast");
+                return;
+            }
+        } else {
+            send_transmission_over_udp_not_possible_message(viewer_setup);
         }
         unsigned char * buf;
         while(1) {
@@ -306,8 +361,8 @@ int begin_screen_broadcast(struct amu_viewer_setup * viewer_setup, pid_t * broad
         return -1;
     }
     if(pid == 0) {
-        int jpeg_quality = JPEG_QUALITY;
-        while(send_frame(viewer_setup, &jpeg_quality) != -1) {
+        while(1) {
+            send_frame(viewer_setup);
             usleep(300 * 1000);
         }
         exit(0);
@@ -317,9 +372,11 @@ int begin_screen_broadcast(struct amu_viewer_setup * viewer_setup, pid_t * broad
     return 0;
 }
 
-int send_frame(struct amu_viewer_setup * viewer_setup, int * jpeg_quality) {
+void send_frame(struct amu_viewer_setup * viewer_setup) {
     struct frame screen_frame;
-    get_frame(&screen_frame, *jpeg_quality, &viewer_setup->screen_details);
+    struct screen_image image;
+    get_screen_image(&viewer_setup->screen_details, &image);
+    get_frame(&screen_frame, &image, viewer_setup->frame_settings.jpeg_quality, viewer_setup->frame_settings.scale);
     if(screen_frame.image_size <= MAX_UDP_PACKET_SIZE) {
         sendto(viewer_setup->host_socket_udp,
                screen_frame.image,
@@ -328,16 +385,9 @@ int send_frame(struct amu_viewer_setup * viewer_setup, int * jpeg_quality) {
                (struct sockaddr*) &viewer_setup->udp_client_address,
                sizeof(viewer_setup->udp_client_address));
     } else {
-        LOG("Frame could not be sent because of too big frame size (%d). Downgrading jpeg quality from %d to %d", screen_frame.image_size, *jpeg_quality, *jpeg_quality-JPEG_QUALITY_DOWNGRADE_STEP);
-        *jpeg_quality = *jpeg_quality - JPEG_QUALITY_DOWNGRADE_STEP;
+        LOG("Frame could not be sent because of too big frame size (%d). Downgrading jpeg quality from %d to %d", screen_frame.image_size);
     }
     free(screen_frame.image);
-    if(*jpeg_quality < 0) {
-        send_transmission_over_udp_not_possible_message(viewer_setup);
-        LOG("Screen sharing impossible");
-        return -1;
-    }
-    return 0;
 }
 
 void send_transmission_over_udp_not_possible_message(struct amu_viewer_setup * viewer_setup) {
@@ -364,38 +414,47 @@ void send_transmission_over_udp_not_possible_message(struct amu_viewer_setup * v
     free(buffer);
 }
 
-void get_frame(struct frame * screen_frame, int quality, struct screen * screen_details) {
-    /* x11 code */
-    XWindowAttributes gwa;
-    XGetWindowAttributes(screen_details->disp, screen_details->root, &gwa);
-    int width = gwa.width;
-    int height = gwa.height;
-    XImage *image = XGetImage(screen_details->disp, screen_details->root, 0, 0, width, height, AllPlanes, ZPixmap);
+void get_frame(struct frame * screen_frame, struct screen_image * screen_image, int quality, int scale) {
+    int width = screen_image->window_attributes.width;
+    int height = screen_image->window_attributes.height;
 
-    unsigned long red_mask = image->red_mask;
-    unsigned long green_mask = image->green_mask;
-    unsigned long blue_mask = image->blue_mask;
+    unsigned long red_mask = screen_image->image->red_mask;
+    unsigned long green_mask = screen_image->image->green_mask;
+    unsigned long blue_mask = screen_image->image->blue_mask;
 
-    unsigned char * image_buffer = (char *) malloc(width*height*3*sizeof(unsigned char));
+    unsigned char * image_buffer = (char *) malloc((width/scale)*(height/scale)*3*sizeof(unsigned char));
 
     long position = 0;
 
-    for(int y=0; y < height; y++) {
-        for(int x = 0; x < width; x++) {
-            unsigned long pixel = XGetPixel(image, x, y);
-            unsigned char blue = pixel & blue_mask;
-            unsigned char green = (pixel & green_mask) >> 8;
-            unsigned char red = (pixel & red_mask) >> 16;
+    for(int y=0; y < height; y=y+scale) {
+        for(int x = 0; x < width; x=x+scale) {
+            unsigned long red_sum, green_sum, blue_sum;
+            red_sum = 0;
+            green_sum = 0;
+            blue_sum = 0;
 
-            image_buffer[position] = red;
-            image_buffer[position+1] = green;
-            image_buffer[position+2] = blue;
+            for(int s=0; s<scale; s++) {
+                for(int s2=0; s2<scale; s2++) {
+                    unsigned long pixel = XGetPixel(screen_image->image, x+s2, y+s);
+
+                    uint8_t blue = pixel & blue_mask;
+                    uint8_t green = (pixel & green_mask) >> 8;
+                    uint8_t red = (pixel & red_mask) >> 16;
+
+                    red_sum += red;
+                    green_sum += green;
+                    blue_sum += blue;
+                }
+            }
+
+            image_buffer[position] = red_sum/(scale*scale);
+            image_buffer[position+1] = green_sum/(scale*scale);
+            image_buffer[position+2] = blue_sum/(scale*scale);
 
             position += 3;
         }
     }
 
-    /* libjpg code */
     struct jpeg_compress_struct cinfo;
     struct jpeg_error_mgr jerr;
     JSAMPROW row_pointer[1];
@@ -406,17 +465,18 @@ void get_frame(struct frame * screen_frame, int quality, struct screen * screen_
 
     screen_frame->image = NULL;
     screen_frame->image_size = 0;
+
     jpeg_mem_dest(&cinfo, &screen_frame->image, &screen_frame->image_size);
 
-    cinfo.image_width = width;
-    cinfo.image_height = height;
+    cinfo.image_width = (width/scale);
+    cinfo.image_height = (height/scale);
     cinfo.input_components = 3;
     cinfo.in_color_space = JCS_RGB;
     jpeg_set_defaults(&cinfo);
     jpeg_set_quality(&cinfo, quality, TRUE);
     jpeg_start_compress(&cinfo, TRUE);
 
-    row_stride = width * 3;	/* JSAMPLEs per row in image_buffer */
+    row_stride = (width/scale) * 3;	/* JSAMPLEs per row in image_buffer */
 
     while (cinfo.next_scanline < cinfo.image_height) {
         row_pointer[0] = & image_buffer[cinfo.next_scanline * row_stride];

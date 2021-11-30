@@ -19,11 +19,13 @@ import pl.nieruchalski.client.domain.publisher.GeneralPublisher;
 import pl.nieruchalski.client.domain.publisher.NewConnectionPublisher;
 import pl.nieruchalski.client.domain.publisher.NewFramePublisher;
 import pl.nieruchalski.client.domain.service.ConnectionService;
+import pl.nieruchalski.client.domain.service.HostManager;
 import pl.nieruchalski.client.domain.subscriber.GeneralSubscriber;
 import pl.nieruchalski.client.domain.subscriber.NewConnectionSubscriber;
 import pl.nieruchalski.client.domain.subscriber.NewFrameSubscriber;
 import pl.nieruchalski.client.domain.values.event.Frame;
 import pl.nieruchalski.client.domain.values.event.ViewerHost;
+import pl.nieruchalski.client.domain.values.event.general.GeneralInformation;
 import pl.nieruchalski.client.domain.values.event.general.UdpPortChange;
 
 import java.io.*;
@@ -100,7 +102,7 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
 
     @Override
     public void handleNewFrame(ViewerHost host) {
-        if(activeHost == host) {
+        if(activeHost.getId().equals(host.getId())) {
             this.renderHost(host);
         }
     }
