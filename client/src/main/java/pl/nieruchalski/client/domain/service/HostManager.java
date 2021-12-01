@@ -23,6 +23,16 @@ public class HostManager {
 
     private Set<ViewerHost> activeHosts = new HashSet();
 
+    private ViewerHost selectedHost;
+
+    public void selectHost(ViewerHost host) {
+        this.selectedHost = host;
+    }
+
+    public ViewerHost getSelectedHost() {
+        return this.selectedHost;
+    }
+
     public void registerHost(ViewerHost host) {
         activeHosts.add(host);
     }

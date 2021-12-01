@@ -1,0 +1,42 @@
+<style>
+    table, th, td {
+        border: 1px solid black;
+    }
+</style>
+
+<h1>Events in amu_viewer</h1>
+<table>
+    <thead>
+        <tr>
+            <td>Event</td>
+            <td>Number [SHORT 2 BYTES]</td>
+            <td>Attributes</td>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Cursor move</td>
+            <td>0</td>
+            <td>
+                X coordinate LONG 8 BYTES,
+                Y coordinate LONG 8 BYTES
+            </td>
+        </tr>
+        <tr>
+            <td>Left mouse click</td>
+            <td>1</td>
+            <td>
+                X coordinate LONG 8 BYTES,
+                Y coordinate LONG 8 BYTES
+            </td>
+        </tr>
+        <tr>
+            <td>Right mouse click</td>
+            <td>2</td>
+            <td>
+                X coordinate LONG 8 BYTES,
+                Y coordinate LONG 8 BYTES
+            </td>
+        </tr>
+    </tbody>
+</table>

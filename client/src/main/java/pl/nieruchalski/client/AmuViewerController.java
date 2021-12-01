@@ -48,7 +48,6 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
     private Label udpPortLabel;
 
     private Map<Tab, ViewerHost> tabHostMap = new HashMap();
-    private ViewerHost activeHost;
 
     public void initialize() {
         NewConnectionPublisher.getInstance().subscribe(this);
@@ -59,13 +58,15 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
         this.displayContainer.setMinWidth(AmuViewerClientApplication.VIEWER_WIDTH);
         this.clearCanvas();
         tabPane.getSelectionModel().selectedItemProperty().addListener((ov, oldTab, newTab) -> {
-            this.activeHost = this.tabHostMap.get(newTab);
-            if(this.activeHost != null) {
-                this.renderHost(this.activeHost);
+            ViewerHost selectedHost = this.tabHostMap.get(newTab);
+            HostManager.getInstance().selectHost(selectedHost);
+            if(selectedHost != null) {
+                this.renderHost(selectedHost);
             } else {
                 this.clearCanvas();
             }
         });
+        EventBinder.bind(display);
     }
 
     @FXML
@@ -94,7 +95,7 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
                 e.consume();
             }
         });
-        this.activeHost = viewerHost;
+        HostManager.getInstance().selectHost(viewerHost);
         this.tabHostMap.put(connectionTab, viewerHost);
         tabPane.getTabs().add(connectionTab);
         tabPane.getSelectionModel().select(connectionTab);
@@ -102,7 +103,8 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
 
     @Override
     public void handleNewFrame(ViewerHost host) {
-        if(activeHost.getId().equals(host.getId())) {
+        ViewerHost selectedHost = HostManager.getInstance().getSelectedHost();
+        if(selectedHost != null && selectedHost.getId().equals(host.getId())) {
             this.renderHost(host);
         }
     }
@@ -132,5 +134,13 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
         this.displayContainer.setVisible(false);
         this.display.setWidth(0);
         this.display.setHeight(0);
+//        try {
+//            Image image = new Image(new FileInputStream("test.png"));
+//            display.setWidth(image.getWidth());
+//            display.setHeight(image.getHeight());
+//            display.getGraphicsContext2D().drawImage(image, 0, 0, image.getWidth(), image.getHeight());
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
     }
 }

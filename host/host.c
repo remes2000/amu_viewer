@@ -9,18 +9,27 @@
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/XTest.h>
 #include <jpeglib.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <stdint.h>
 
 
 #define DEFAULT_TCP_PORT 1337
 #define DEFAULT_UDP_PORT DEFAULT_TCP_PORT + 1
 #define MAX_UDP_PACKET_SIZE 65535
+#define MAX_IMAGE_SIZE_WHEN_ADJUST 60535
 #define DEAFULT_INTERFACE "enp0s31f6"
 #define LOG(format, ...) printf("[%s] " format "\n", getFormattedTime(), ## __VA_ARGS__)
 #define JPEG_START_QUALITY 20
 #define JPEG_DOWN_QUALITY 5
+
+// ---=== EVENT CODES ===---
+#define EVENT_MOUSE_MOVE 0
+#define EVENT_MOUSE_LEFT_CLICK 1
+#define EVENT_MOUSE_RIGHT_CLICK 2
+// ---=== EVENT CODES ===---
 
 char* getFormattedTime(void) {
     time_t rawtime;
@@ -32,10 +41,9 @@ char* getFormattedTime(void) {
     return _retval;
 }
 
-struct screen {
+struct x_connection {
     Display * disp;
     Window root;
-    int scr;
 };
 
 struct frame_settings {
@@ -52,7 +60,8 @@ struct amu_viewer_setup {
     struct sockaddr_in udp_host_address;
     struct sockaddr_in tcp_client_address;
     struct sockaddr_in udp_client_address;
-    struct screen screen_details;
+    struct x_connection event_x_connection;
+    struct x_connection screen_broadcast_x_connection;
     int is_broadcast_possible;
     struct frame_settings frame_settings;
 };
@@ -70,14 +79,14 @@ struct frame {
 socklen_t socklen = sizeof(struct sockaddr_in);
 int setup(int argc, char **argv, struct amu_viewer_setup * viewer_setup);
 int setup_host_address(int argc, char **argv, struct amu_viewer_setup * viewer_setup);
-void setup_screen_details(struct amu_viewer_setup * viewer_setup);
+void setup_connections_to_x_server(struct amu_viewer_setup * viewer_setup);
 void setup_adjust_frame_settings(struct amu_viewer_setup * viewer_setup);
-void get_screen_image(struct screen * screen_details, struct screen_image * raw_screen_image);
+void get_screen_image(struct x_connection * connection, struct screen_image * raw_screen_image);
 void setup_access_code(struct amu_viewer_setup * viewer_setup);
 int setup_host_sockets(struct amu_viewer_setup * viewer_setup);
 int find_interface(char * interface, struct in_addr ** address);
 void say_hello(struct amu_viewer_setup * viewer_setup);
-void handle_connection(struct amu_viewer_setup * viewer_setup);
+int handle_connection(struct amu_viewer_setup * viewer_setup);
 int authorize(struct amu_viewer_setup * viewer_setup);
 int set_udp_client_address(struct amu_viewer_setup * viewer_setup);
 int read_unsigned_int(int tcp_socket, unsigned int * dest);
@@ -86,6 +95,10 @@ int read_n_bytes(int tcp_socket, unsigned char * dest, unsigned int n);
 int begin_screen_broadcast(struct amu_viewer_setup * viewer_setup, pid_t * broadcast_pid);
 void send_frame(struct amu_viewer_setup * viewer_setup);
 void send_transmission_over_udp_not_possible_message(struct amu_viewer_setup * viewer_setup);
+int handle_event(unsigned short event_code, struct amu_viewer_setup * viewer_setup);
+int handle_mouse_move(struct amu_viewer_setup * viewer_setup);
+int handle_mouse_left_click(struct amu_viewer_setup * viewer_setup);
+int handle_mouse_right_click(struct amu_viewer_setup * viewer_setup);
 void get_frame(struct frame * screen_frame, struct screen_image * screen_image, int quality, int scale);
 
 int main(int argc, char **argv) {
@@ -98,9 +111,10 @@ int main(int argc, char **argv) {
     say_hello(&viewer_setup);
     LOG("Waiting for connection...");
     while((viewer_setup.client_socket_tcp = accept(viewer_setup.host_socket_tcp, (struct sockaddr*) &viewer_setup.tcp_client_address, &socklen)) != -1) {
-        handle_connection(&viewer_setup);
-        close(viewer_setup.client_socket_tcp);
-        LOG("Waiting for connection...");
+        if(handle_connection(&viewer_setup) == -1) {
+            close(viewer_setup.client_socket_tcp);
+            LOG("Waiting for connection...");
+        }
     }
     printf("accept() failed");
     close(viewer_setup.client_socket_tcp);
@@ -116,7 +130,7 @@ int setup(int argc, char **argv, struct amu_viewer_setup * viewer_setup) {
     if(setup_host_sockets(viewer_setup) == -1) {
         return -1;
     }
-    setup_screen_details(viewer_setup);
+    setup_connections_to_x_server(viewer_setup);
     setup_adjust_frame_settings(viewer_setup);
     setup_access_code(viewer_setup);
     return 0;
@@ -177,10 +191,14 @@ int setup_host_sockets(struct amu_viewer_setup * viewer_setup) {
     return 0;
 }
 
-void setup_screen_details(struct amu_viewer_setup * viewer_setup) {
-    viewer_setup->screen_details.disp = XOpenDisplay(0);
-    viewer_setup->screen_details.scr = DefaultScreen(viewer_setup->screen_details.disp);
-    viewer_setup->screen_details.root = DefaultRootWindow(viewer_setup->screen_details.disp);
+void setup_connections_to_x_server(struct amu_viewer_setup * viewer_setup) {
+    viewer_setup->event_x_connection.disp = XOpenDisplay(0);
+    viewer_setup->event_x_connection.root = XRootWindow(viewer_setup->event_x_connection.disp, 0);
+    XSelectInput(viewer_setup->event_x_connection.disp, viewer_setup->event_x_connection.root, KeyReleaseMask);
+
+    viewer_setup->screen_broadcast_x_connection.disp = XOpenDisplay(0);
+    viewer_setup->screen_broadcast_x_connection.root = XRootWindow(viewer_setup->screen_broadcast_x_connection.disp, 0);
+    XSelectInput(viewer_setup->screen_broadcast_x_connection.disp, viewer_setup->screen_broadcast_x_connection.root, KeyReleaseMask);
 }
 
 void setup_access_code(struct amu_viewer_setup * viewer_setup) {
@@ -192,16 +210,16 @@ void setup_adjust_frame_settings(struct amu_viewer_setup * viewer_setup) {
     int scale_possibilities[] = {1, 2, 4, 8, 16};
     struct screen_image raw_screen_image;
     struct frame frame;
-    get_screen_image(&viewer_setup->screen_details, &raw_screen_image);
-
+    get_screen_image(&viewer_setup->event_x_connection, &raw_screen_image);
+    LOG("Adjusting frame settings:");
     for(int i=0; i<5; i++) {
         int scale = scale_possibilities[i];
         int quality = JPEG_START_QUALITY;
         while(quality >= JPEG_DOWN_QUALITY) {
             get_frame(&frame, &raw_screen_image, quality, scale);
-            // LOG("scale = %d quality = %d [%d]", scale, quality, frame.image_size);
+            LOG("scale = %d quality = %d [%d]", scale, quality, frame.image_size);
             free(frame.image);
-            if(frame.image_size <= MAX_UDP_PACKET_SIZE) {
+            if(frame.image_size <= MAX_IMAGE_SIZE_WHEN_ADJUST) {
                 viewer_setup->frame_settings.jpeg_quality = quality;
                 viewer_setup->frame_settings.scale = scale;
                 viewer_setup->is_broadcast_possible = 1;
@@ -213,10 +231,10 @@ void setup_adjust_frame_settings(struct amu_viewer_setup * viewer_setup) {
     viewer_setup->is_broadcast_possible = 0;
 }
 
-void get_screen_image(struct screen * screen_details, struct screen_image * raw_screen_image) {
+void get_screen_image(struct x_connection * connection, struct screen_image * raw_screen_image) {
     XWindowAttributes gwa;
-    XGetWindowAttributes(screen_details->disp, screen_details->root, &gwa);
-    raw_screen_image->image = XGetImage(screen_details->disp, screen_details->root, 0, 0, gwa.width, gwa.height, AllPlanes, ZPixmap);
+    XGetWindowAttributes(connection->disp, connection->root, &gwa);
+    raw_screen_image->image = XGetImage(connection->disp, connection->root, 0, 0, gwa.width, gwa.height, AllPlanes, ZPixmap);
     raw_screen_image->window_attributes = gwa;
 }
 
@@ -250,7 +268,7 @@ void say_hello(struct amu_viewer_setup * viewer_setup) {
     }
 }
 
-void handle_connection(struct amu_viewer_setup * viewer_setup) {
+int handle_connection(struct amu_viewer_setup * viewer_setup) {
     pid_t screen_broadcast_process;
     int authorization_result;
 
@@ -258,29 +276,32 @@ void handle_connection(struct amu_viewer_setup * viewer_setup) {
     authorization_result = authorize(viewer_setup);
     if(authorization_result == -1) {
         LOG("Authorization error");
-        return;
+        return -1;
     }
     if(authorization_result == 1) {
         if(send(viewer_setup->client_socket_tcp, &viewer_setup->udp_host_address.sin_port, sizeof(viewer_setup->udp_host_address.sin_port), 0) == -1) {
             LOG("An error occured while sending udp port to client");
-            return;
+            return -1;
         }
         if(set_udp_client_address(viewer_setup) == -1) {
             LOG("An error occured while reading client udp port");
-            return;
+            return -1;
         }
         if(viewer_setup->is_broadcast_possible) {
             if(begin_screen_broadcast(viewer_setup, &screen_broadcast_process) == -1) {
                 LOG("An error occured while starting screen broadcast");
-                return;
+                return -1;
             }
         } else {
             send_transmission_over_udp_not_possible_message(viewer_setup);
         }
-        unsigned char * buf;
+        unsigned short event;
         while(1) {
-            if(recv(viewer_setup->client_socket_tcp, buf, 1, 0) == 1) {
-                LOG("Message from client: %x", buf);
+            if(read_unsigned_short(viewer_setup->client_socket_tcp, &event) == -1) {
+                return -1;
+            }
+            if(handle_event(event, viewer_setup) == -1) {
+                return -1;
             }
         }
     }
@@ -375,7 +396,7 @@ int begin_screen_broadcast(struct amu_viewer_setup * viewer_setup, pid_t * broad
 void send_frame(struct amu_viewer_setup * viewer_setup) {
     struct frame screen_frame;
     struct screen_image image;
-    get_screen_image(&viewer_setup->screen_details, &image);
+    get_screen_image(&viewer_setup->screen_broadcast_x_connection, &image);
     get_frame(&screen_frame, &image, viewer_setup->frame_settings.jpeg_quality, viewer_setup->frame_settings.scale);
     if(screen_frame.image_size <= MAX_UDP_PACKET_SIZE) {
         sendto(viewer_setup->host_socket_udp,
@@ -412,6 +433,66 @@ void send_transmission_over_udp_not_possible_message(struct amu_viewer_setup * v
            (struct sockaddr*) &viewer_setup->udp_client_address,
            sizeof(viewer_setup->udp_client_address));
     free(buffer);
+}
+
+int handle_event(unsigned short event_code, struct amu_viewer_setup * viewer_setup) {
+    int result = 0;
+    switch (event_code) {
+        case EVENT_MOUSE_MOVE:
+            result = handle_mouse_move(viewer_setup);
+        break;
+        case EVENT_MOUSE_LEFT_CLICK:
+            result = handle_mouse_left_click(viewer_setup);
+        break;
+        case EVENT_MOUSE_RIGHT_CLICK:
+            result = handle_mouse_right_click(viewer_setup);
+        break;
+    }
+    return result;
+}
+
+int handle_mouse_move(struct amu_viewer_setup * viewer_setup) {
+    unsigned int x, y;
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &x) == -1) {
+        return -1;
+    }
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &y) == -1) {
+        return -1;
+    }
+    int scale = viewer_setup->frame_settings.scale;
+    LOG("%lu %lu", x, y);
+    XWarpPointer(viewer_setup->event_x_connection.disp, None, viewer_setup->event_x_connection.root, 0, 0, 0, 0, x * scale, y * scale);
+    XFlush(viewer_setup->event_x_connection.disp);
+}
+
+int handle_mouse_left_click(struct amu_viewer_setup * viewer_setup) {
+    unsigned int x, y;
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &x) == -1) {
+        return -1;
+    }
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &y) == -1) {
+        return -1;
+    }
+    int scale = viewer_setup->frame_settings.scale;
+    XWarpPointer(viewer_setup->event_x_connection.disp, None, viewer_setup->event_x_connection.root, 0, 0, 0, 0, x * scale, y * scale);
+    XTestFakeButtonEvent(viewer_setup->event_x_connection.disp, 1, True, CurrentTime);
+    XTestFakeButtonEvent(viewer_setup->event_x_connection.disp, 1, False, CurrentTime);
+    XFlush(viewer_setup->event_x_connection.disp);
+}
+
+int handle_mouse_right_click(struct amu_viewer_setup * viewer_setup) {
+    unsigned int x, y;
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &x) == -1) {
+        return -1;
+    }
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &y) == -1) {
+        return -1;
+    }
+    int scale = viewer_setup->frame_settings.scale;
+    XWarpPointer(viewer_setup->event_x_connection.disp, None, viewer_setup->event_x_connection.root, 0, 0, 0, 0, x * scale, y * scale);
+    XTestFakeButtonEvent(viewer_setup->event_x_connection.disp, 3, True, CurrentTime);
+    XTestFakeButtonEvent(viewer_setup->event_x_connection.disp, 3, False, CurrentTime);
+    XFlush(viewer_setup->event_x_connection.disp);
 }
 
 void get_frame(struct frame * screen_frame, struct screen_image * screen_image, int quality, int scale) {

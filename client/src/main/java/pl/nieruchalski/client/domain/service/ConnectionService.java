@@ -5,6 +5,7 @@ import pl.nieruchalski.client.domain.exception.CannotCloseConnectionWithHostExce
 import pl.nieruchalski.client.domain.exception.CannotOpenUdpSocketException;
 import pl.nieruchalski.client.domain.exception.EstablishConnectionException;
 import pl.nieruchalski.client.domain.exception.HostRefusedAccessCodeException;
+import pl.nieruchalski.client.domain.helpers.ViewerTcpSocket;
 import pl.nieruchalski.client.domain.publisher.GeneralPublisher;
 import pl.nieruchalski.client.domain.publisher.NewConnectionPublisher;
 import pl.nieruchalski.client.domain.values.ConnectionRequest;
@@ -23,7 +24,6 @@ import java.util.Set;
 public class ConnectionService {
     private static ConnectionService service;
     private DatagramSocket udpSocket;
-    private Set<ViewerHost> activeHosts = new HashSet();
 
     public static ConnectionService getInstance() {
         if(service == null) {
@@ -48,16 +48,14 @@ public class ConnectionService {
 
     public void establishConnection(ConnectionRequest connectionRequest) throws EstablishConnectionException, HostRefusedAccessCodeException {
         try {
-            Socket socket = new Socket(connectionRequest.getIp(), connectionRequest.getPort());
-            DataOutputStream outputStream = new DataOutputStream(socket.getOutputStream());
-            DataInputStream inputStream = new DataInputStream(socket.getInputStream());
-            outputStream.writeInt(connectionRequest.getAccessCode());
-            if(inputStream.readByte() == 0) {
+            ViewerTcpSocket socket = new ViewerTcpSocket(new Socket(connectionRequest.getIp(), connectionRequest.getPort()));
+            socket.getOutputStream().writeInt(connectionRequest.getAccessCode());
+            if(socket.getInputStream().readByte() == 0) {
                 socket.close();
                 throw new HostRefusedAccessCodeException();
             }
-            Integer clientUdpPort = inputStream.readUnsignedShort();
-            outputStream.writeShort(this.udpSocket.getLocalPort());
+            Integer clientUdpPort = socket.getInputStream().readUnsignedShort();
+            socket.getOutputStream().writeShort(this.udpSocket.getLocalPort());
             ViewerHost host = new ViewerHost(socket, clientUdpPort);
             HostManager.getInstance().registerHost(host);
             NewConnectionPublisher.getInstance().broadcast(host);

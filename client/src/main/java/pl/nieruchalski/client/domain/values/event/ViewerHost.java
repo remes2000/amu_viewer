@@ -1,6 +1,8 @@
 package pl.nieruchalski.client.domain.values.event;
 
 import pl.nieruchalski.client.domain.exception.CannotCloseConnectionWithHostException;
+import pl.nieruchalski.client.domain.helpers.EventCodes;
+import pl.nieruchalski.client.domain.helpers.ViewerTcpSocket;
 
 import java.io.IOException;
 import java.net.Socket;
@@ -14,11 +16,11 @@ public class ViewerHost implements AutoCloseable {
     }
 
     private Integer id;
-    private Socket socket;
+    private ViewerTcpSocket socket;
     private Integer udpPort;
     private Frame lastFrame;
 
-    public ViewerHost(Socket socket, Integer udpPort) {
+    public ViewerHost(ViewerTcpSocket socket, Integer udpPort) {
         this.id = generateId();
         this.socket = socket;
         this.udpPort = udpPort;
@@ -38,11 +40,11 @@ public class ViewerHost implements AutoCloseable {
     }
 
     public String getIp() {
-        return this.socket.getInetAddress().getHostAddress();
+        return this.socket.getSocket().getInetAddress().getHostAddress();
     }
 
     public Integer getCommunicationTcpPort() {
-        return this.socket.getPort();
+        return this.socket.getSocket().getPort();
     }
 
     public Integer getFileTransferTcpPort() {
@@ -63,5 +65,27 @@ public class ViewerHost implements AutoCloseable {
 
     public Integer getId() {
         return this.id;
+    }
+
+    public void mouseMove(Integer x, Integer y) {
+        this.mouseEvent(x, y, EventCodes.MOUSE_MOVE);
+    }
+
+    public void mouseLeftClick(Integer x, Integer y) {
+        this.mouseEvent(x, y, EventCodes.MOUSE_LEFT_CLICK);
+    }
+
+    public void mouseRightClick(Integer x, Integer y) {
+        this.mouseEvent(x, y, EventCodes.MOUSE_RIGHT_CLICK);
+    }
+
+    private void mouseEvent(Integer x, Integer y, short code) {
+        try {
+            this.socket.getOutputStream().writeShort(code);
+            this.socket.getOutputStream().writeInt(x);
+            this.socket.getOutputStream().writeInt(y);
+        } catch (IOException e) {
+            System.err.println("Cannot execute mouseMove event");
+        }
     }
 }
