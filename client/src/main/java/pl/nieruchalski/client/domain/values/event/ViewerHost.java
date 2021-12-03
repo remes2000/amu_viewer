@@ -3,6 +3,7 @@ package pl.nieruchalski.client.domain.values.event;
 import javafx.scene.input.KeyCode;
 import pl.nieruchalski.client.domain.exception.CannotCloseConnectionWithHostException;
 import pl.nieruchalski.client.domain.helpers.EventCodes;
+import pl.nieruchalski.client.domain.helpers.KeyCodeMap;
 import pl.nieruchalski.client.domain.helpers.ViewerTcpSocket;
 
 import java.io.IOException;
@@ -89,18 +90,26 @@ public class ViewerHost implements AutoCloseable {
     }
 
     public void keyPressed(KeyCode keyCode) {
+        Integer translatedKeyCode = KeyCodeMap.translate(keyCode);
+        if(translatedKeyCode == null) {
+            return;
+        }
         try {
             this.socket.getOutputStream().writeShort(EventCodes.KEY_PRESSED);
-            this.socket.getOutputStream().writeInt(keyCode.getCode());
+            this.socket.getOutputStream().writeInt(translatedKeyCode);
         } catch (IOException e) {
             System.err.println("Cannot execute key pressed event");
         }
     }
 
     public void keyReleased(KeyCode keyCode) {
+        Integer translatedKeyCode = KeyCodeMap.translate(keyCode);
+        if(translatedKeyCode == null) {
+            return;
+        }
         try {
             this.socket.getOutputStream().writeShort(EventCodes.KEY_RELEASED);
-            this.socket.getOutputStream().writeInt(keyCode.getCode());
+            this.socket.getOutputStream().writeInt(translatedKeyCode);
         } catch (IOException e) {
             System.err.println("Cannot execute key released event");
         }
