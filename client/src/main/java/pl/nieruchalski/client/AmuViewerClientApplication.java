@@ -16,6 +16,8 @@ public class AmuViewerClientApplication extends Application {
     public void start(Stage stage) throws IOException {
         FXMLLoader fxmlLoader = new FXMLLoader(AmuViewerClientApplication.class.getResource("amu-viewer-view.fxml"));
         Scene scene = new Scene(fxmlLoader.load(), VIEWER_WIDTH, VIEWER_HEIGHT);
+        EventBinder.getInstance().setScene(scene);
+        EventBinder.getInstance().bind();
         stage.setTitle("amu_viewer");
         stage.setScene(scene);
         stage.show();

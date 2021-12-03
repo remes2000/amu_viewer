@@ -1,5 +1,6 @@
 package pl.nieruchalski.client.domain.values.event;
 
+import javafx.scene.input.KeyCode;
 import pl.nieruchalski.client.domain.exception.CannotCloseConnectionWithHostException;
 import pl.nieruchalski.client.domain.helpers.EventCodes;
 import pl.nieruchalski.client.domain.helpers.ViewerTcpSocket;
@@ -71,12 +72,38 @@ public class ViewerHost implements AutoCloseable {
         this.mouseEvent(x, y, EventCodes.MOUSE_MOVE);
     }
 
-    public void mouseLeftClick(Integer x, Integer y) {
-        this.mouseEvent(x, y, EventCodes.MOUSE_LEFT_CLICK);
+    public void mouseLeftPressed(Integer x, Integer y) {
+        this.mouseEvent(x, y, EventCodes.MOUSE_LEFT_PRESSED);
     }
 
-    public void mouseRightClick(Integer x, Integer y) {
-        this.mouseEvent(x, y, EventCodes.MOUSE_RIGHT_CLICK);
+    public void mouseLeftReleased(Integer x, Integer y) {
+        this.mouseEvent(x, y, EventCodes.MOUSE_LEFT_RELEASED);
+    }
+
+    public void mouseRightPressed(Integer x, Integer y) {
+        this.mouseEvent(x, y, EventCodes.MOUSE_RIGHT_PRESSED);
+    }
+
+    public void mouseRightReleased(Integer x, Integer y) {
+        this.mouseEvent(x, y, EventCodes.MOUSE_RIGHT_RELEASED);
+    }
+
+    public void keyPressed(KeyCode keyCode) {
+        try {
+            this.socket.getOutputStream().writeShort(EventCodes.KEY_PRESSED);
+            this.socket.getOutputStream().writeInt(keyCode.getCode());
+        } catch (IOException e) {
+            System.err.println("Cannot execute key pressed event");
+        }
+    }
+
+    public void keyReleased(KeyCode keyCode) {
+        try {
+            this.socket.getOutputStream().writeShort(EventCodes.KEY_RELEASED);
+            this.socket.getOutputStream().writeInt(keyCode.getCode());
+        } catch (IOException e) {
+            System.err.println("Cannot execute key released event");
+        }
     }
 
     private void mouseEvent(Integer x, Integer y, short code) {
@@ -85,7 +112,7 @@ public class ViewerHost implements AutoCloseable {
             this.socket.getOutputStream().writeInt(x);
             this.socket.getOutputStream().writeInt(y);
         } catch (IOException e) {
-            System.err.println("Cannot execute mouseMove event");
+            System.err.println("Cannot execute mouse event");
         }
     }
 }

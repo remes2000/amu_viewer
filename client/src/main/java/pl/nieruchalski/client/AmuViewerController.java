@@ -66,7 +66,7 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
                 this.clearCanvas();
             }
         });
-        EventBinder.bind(display);
+        EventBinder.getInstance().setDisplay(this.display);
     }
 
     @FXML

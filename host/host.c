@@ -27,8 +27,12 @@
 
 // ---=== EVENT CODES ===---
 #define EVENT_MOUSE_MOVE 0
-#define EVENT_MOUSE_LEFT_CLICK 1
-#define EVENT_MOUSE_RIGHT_CLICK 2
+#define EVENT_MOUSE_LEFT_PRESSED 1
+#define EVENT_MOUSE_LEFT_RELEASED 2
+#define EVENT_MOUSE_RIGHT_PRESSED 3
+#define EVENT_MOUSE_RIGHT_RELEASED 4
+#define EVENT_KEY_PRESSED 5
+#define EVENT_KEY_RELEASED 6
 // ---=== EVENT CODES ===---
 
 char* getFormattedTime(void) {
@@ -97,8 +101,12 @@ void send_frame(struct amu_viewer_setup * viewer_setup);
 void send_transmission_over_udp_not_possible_message(struct amu_viewer_setup * viewer_setup);
 int handle_event(unsigned short event_code, struct amu_viewer_setup * viewer_setup);
 int handle_mouse_move(struct amu_viewer_setup * viewer_setup);
-int handle_mouse_left_click(struct amu_viewer_setup * viewer_setup);
-int handle_mouse_right_click(struct amu_viewer_setup * viewer_setup);
+int handle_mouse_left_pressed(struct amu_viewer_setup * viewer_setup);
+int handle_mouse_left_released(struct amu_viewer_setup * viewer_setup);
+int handle_mouse_right_pressed(struct amu_viewer_setup * viewer_setup);
+int handle_mouse_right_released(struct amu_viewer_setup * viewer_setup);
+int handle_key_pressed(struct amu_viewer_setup * viewer_setup);
+int handle_key_released(struct amu_viewer_setup * viewer_setup);
 void get_frame(struct frame * screen_frame, struct screen_image * screen_image, int quality, int scale);
 
 int main(int argc, char **argv) {
@@ -441,11 +449,23 @@ int handle_event(unsigned short event_code, struct amu_viewer_setup * viewer_set
         case EVENT_MOUSE_MOVE:
             result = handle_mouse_move(viewer_setup);
         break;
-        case EVENT_MOUSE_LEFT_CLICK:
-            result = handle_mouse_left_click(viewer_setup);
+        case EVENT_MOUSE_LEFT_PRESSED:
+            result = handle_mouse_left_pressed(viewer_setup);
         break;
-        case EVENT_MOUSE_RIGHT_CLICK:
-            result = handle_mouse_right_click(viewer_setup);
+        case EVENT_MOUSE_LEFT_RELEASED:
+            result = handle_mouse_left_released(viewer_setup);
+        break;
+        case EVENT_MOUSE_RIGHT_PRESSED:
+            result = handle_mouse_right_pressed(viewer_setup);
+        break;
+        case EVENT_MOUSE_RIGHT_RELEASED:
+            result = handle_mouse_right_released(viewer_setup);
+        break;
+        case EVENT_KEY_PRESSED:
+            result = handle_key_pressed(viewer_setup);
+        break;
+        case EVENT_KEY_RELEASED:
+            result = handle_key_released(viewer_setup);
         break;
     }
     return result;
@@ -460,12 +480,11 @@ int handle_mouse_move(struct amu_viewer_setup * viewer_setup) {
         return -1;
     }
     int scale = viewer_setup->frame_settings.scale;
-    LOG("%lu %lu", x, y);
     XWarpPointer(viewer_setup->event_x_connection.disp, None, viewer_setup->event_x_connection.root, 0, 0, 0, 0, x * scale, y * scale);
     XFlush(viewer_setup->event_x_connection.disp);
 }
 
-int handle_mouse_left_click(struct amu_viewer_setup * viewer_setup) {
+int handle_mouse_left_pressed(struct amu_viewer_setup * viewer_setup) {
     unsigned int x, y;
     if(read_unsigned_int(viewer_setup->client_socket_tcp, &x) == -1) {
         return -1;
@@ -476,11 +495,24 @@ int handle_mouse_left_click(struct amu_viewer_setup * viewer_setup) {
     int scale = viewer_setup->frame_settings.scale;
     XWarpPointer(viewer_setup->event_x_connection.disp, None, viewer_setup->event_x_connection.root, 0, 0, 0, 0, x * scale, y * scale);
     XTestFakeButtonEvent(viewer_setup->event_x_connection.disp, 1, True, CurrentTime);
+    XFlush(viewer_setup->event_x_connection.disp);
+}
+
+int handle_mouse_left_released(struct amu_viewer_setup * viewer_setup) {
+    unsigned int x, y;
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &x) == -1) {
+        return -1;
+    }
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &y) == -1) {
+        return -1;
+    }
+    int scale = viewer_setup->frame_settings.scale;
+    XWarpPointer(viewer_setup->event_x_connection.disp, None, viewer_setup->event_x_connection.root, 0, 0, 0, 0, x * scale, y * scale);
     XTestFakeButtonEvent(viewer_setup->event_x_connection.disp, 1, False, CurrentTime);
     XFlush(viewer_setup->event_x_connection.disp);
 }
 
-int handle_mouse_right_click(struct amu_viewer_setup * viewer_setup) {
+int handle_mouse_right_pressed(struct amu_viewer_setup * viewer_setup) {
     unsigned int x, y;
     if(read_unsigned_int(viewer_setup->client_socket_tcp, &x) == -1) {
         return -1;
@@ -491,7 +523,40 @@ int handle_mouse_right_click(struct amu_viewer_setup * viewer_setup) {
     int scale = viewer_setup->frame_settings.scale;
     XWarpPointer(viewer_setup->event_x_connection.disp, None, viewer_setup->event_x_connection.root, 0, 0, 0, 0, x * scale, y * scale);
     XTestFakeButtonEvent(viewer_setup->event_x_connection.disp, 3, True, CurrentTime);
+    XFlush(viewer_setup->event_x_connection.disp);
+}
+
+int handle_mouse_right_released(struct amu_viewer_setup * viewer_setup) {
+    unsigned int x, y;
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &x) == -1) {
+        return -1;
+    }
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &y) == -1) {
+        return -1;
+    }
+    int scale = viewer_setup->frame_settings.scale;
+    XWarpPointer(viewer_setup->event_x_connection.disp, None, viewer_setup->event_x_connection.root, 0, 0, 0, 0, x * scale, y * scale);
     XTestFakeButtonEvent(viewer_setup->event_x_connection.disp, 3, False, CurrentTime);
+    XFlush(viewer_setup->event_x_connection.disp);
+}
+
+int handle_key_pressed(struct amu_viewer_setup * viewer_setup) {
+    unsigned int key_code;
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &key_code) == -1) {
+        return -1;
+    }
+    LOG("Key released %d", key_code);
+    XTestFakeKeyEvent(viewer_setup->event_x_connection.disp, key_code, True, 0);
+    XFlush(viewer_setup->event_x_connection.disp);
+}
+
+int handle_key_released(struct amu_viewer_setup * viewer_setup) {
+    unsigned int key_code;
+    if(read_unsigned_int(viewer_setup->client_socket_tcp, &key_code) == -1) {
+        return -1;
+    }
+    LOG("Key released %d", key_code);
+    XTestFakeKeyEvent(viewer_setup->event_x_connection.disp, key_code, False, 0);
     XFlush(viewer_setup->event_x_connection.disp);
 }
 
