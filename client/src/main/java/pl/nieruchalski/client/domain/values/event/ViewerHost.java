@@ -90,28 +90,23 @@ public class ViewerHost implements AutoCloseable {
     }
 
     public void keyPressed(KeyCode keyCode) {
-        Integer translatedKeyCode = KeyCodeMap.translate(keyCode);
-        if(translatedKeyCode == null) {
-            return;
-        }
-        try {
-            this.socket.getOutputStream().writeShort(EventCodes.KEY_PRESSED);
-            this.socket.getOutputStream().writeInt(translatedKeyCode);
-        } catch (IOException e) {
-            System.err.println("Cannot execute key pressed event");
-        }
+        this.keyEvent(keyCode, EventCodes.KEY_PRESSED);
     }
 
     public void keyReleased(KeyCode keyCode) {
+        this.keyEvent(keyCode, EventCodes.KEY_RELEASED);
+    }
+
+    private void keyEvent(KeyCode keyCode, short eventCode) {
         Integer translatedKeyCode = KeyCodeMap.translate(keyCode);
         if(translatedKeyCode == null) {
             return;
         }
         try {
-            this.socket.getOutputStream().writeShort(EventCodes.KEY_RELEASED);
+            this.socket.getOutputStream().writeShort(eventCode);
             this.socket.getOutputStream().writeInt(translatedKeyCode);
         } catch (IOException e) {
-            System.err.println("Cannot execute key released event");
+            System.err.println("Cannot execute key event");
         }
     }
 
