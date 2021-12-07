@@ -20,7 +20,6 @@
 #define DEFAULT_UDP_PORT DEFAULT_TCP_PORT + 1
 #define MAX_UDP_PACKET_SIZE 65535
 #define MAX_IMAGE_SIZE_WHEN_ADJUST 60535
-#define DEAFULT_INTERFACE "enp0s31f6"
 #define LOG(format, ...) printf("[%s] " format "\n", getFormattedTime(), ## __VA_ARGS__)
 #define JPEG_START_QUALITY 20
 #define JPEG_DOWN_QUALITY 5
@@ -88,7 +87,6 @@ void setup_adjust_frame_settings(struct amu_viewer_setup * viewer_setup);
 void get_screen_image(struct x_connection * connection, struct screen_image * raw_screen_image);
 void setup_access_code(struct amu_viewer_setup * viewer_setup);
 int setup_host_sockets(struct amu_viewer_setup * viewer_setup);
-int find_interface(char * interface, struct in_addr ** address);
 void say_hello(struct amu_viewer_setup * viewer_setup);
 int handle_connection(struct amu_viewer_setup * viewer_setup);
 int authorize(struct amu_viewer_setup * viewer_setup);
@@ -147,29 +145,18 @@ int setup(int argc, char **argv, struct amu_viewer_setup * viewer_setup) {
 int setup_host_address(int argc, char **argv, struct amu_viewer_setup * viewer_setup) {
     unsigned short tcp_port = DEFAULT_TCP_PORT;
     unsigned short udp_port = DEFAULT_UDP_PORT;
-    char * interface_name = DEAFULT_INTERFACE;
-    struct in_addr * addr;
     if(argc > 1) {
         tcp_port = atoi(argv[1]);
     }
     if(argc > 2) {
         udp_port = atoi(argv[2]);
     }
-    if(argc > 3) {
-        interface_name = argv[3];
-    }
-    if(find_interface(interface_name, &addr) == -1) {
-        printf("Cannot find interface with name %s \n", interface_name);
-        return -1;
-    }
     viewer_setup->tcp_host_address.sin_family = AF_INET;
     viewer_setup->tcp_host_address.sin_port = htons(tcp_port);
-    // should i convert this?
-    viewer_setup->tcp_host_address.sin_addr = *addr;
+    viewer_setup->tcp_host_address.sin_addr.s_addr = INADDR_ANY;
     viewer_setup->udp_host_address.sin_family = AF_INET;
-    viewer_setup->udp_host_address.sin_port  = htons(udp_port);
-    // should i convert this?
-    viewer_setup->udp_host_address.sin_addr  = *addr;
+    viewer_setup->udp_host_address.sin_port = htons(udp_port);
+    viewer_setup->udp_host_address.sin_addr.s_addr = INADDR_ANY;
     return 0;
 }
 
@@ -246,27 +233,9 @@ void get_screen_image(struct x_connection * connection, struct screen_image * ra
     raw_screen_image->window_attributes = gwa;
 }
 
-int find_interface(char * interface_name, struct in_addr ** address) {
-    struct ifaddrs *ifaddr, *ifa;
-    struct sockaddr_in *sa;
-    if(getifaddrs(&ifaddr) == -1) {
-        return -1;
-    }
-    for(ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-        if(ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
-            if(strcmp(ifa->ifa_name, interface_name) == 0) {
-                sa = (struct sockaddr_in *) ifa->ifa_addr;
-                *address = &sa->sin_addr;
-                return 0;
-            }
-        }
-    }
-    return -1;
-}
-
 void say_hello(struct amu_viewer_setup * viewer_setup) {
     printf("---=== AMU_VIEWER ===---- \n");
-    printf("Listening on %s:%d \n", inet_ntoa(viewer_setup->tcp_host_address.sin_addr), ntohs(viewer_setup->tcp_host_address.sin_port));
+    printf("Listening on port %d \n", ntohs(viewer_setup->tcp_host_address.sin_port));
     printf("UDP port: %d \n", ntohs(viewer_setup->udp_host_address.sin_port));
     printf("Access code = %d\n", viewer_setup->access_code);
     if(viewer_setup->is_broadcast_possible) {
@@ -545,7 +514,6 @@ int handle_key_pressed(struct amu_viewer_setup * viewer_setup) {
     if(read_unsigned_int(viewer_setup->client_socket_tcp, &key_code) == -1) {
         return -1;
     }
-    LOG("Key released %d", key_code);
     XTestFakeKeyEvent(viewer_setup->event_x_connection.disp, key_code, True, 0);
     XFlush(viewer_setup->event_x_connection.disp);
 }
@@ -555,7 +523,6 @@ int handle_key_released(struct amu_viewer_setup * viewer_setup) {
     if(read_unsigned_int(viewer_setup->client_socket_tcp, &key_code) == -1) {
         return -1;
     }
-    LOG("Key released %d", key_code);
     XTestFakeKeyEvent(viewer_setup->event_x_connection.disp, key_code, False, 0);
     XFlush(viewer_setup->event_x_connection.disp);
 }
