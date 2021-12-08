@@ -145,6 +145,8 @@ int main(int argc, char **argv) {
 }
 
 int setup(int argc, char **argv, struct amu_viewer_setup * viewer_setup) {
+    viewer_setup->screen_broadcast_process = NULL;
+    viewer_setup->file_transfer_process = NULL;
     if(setup_host_address(argc, argv, viewer_setup) == -1) {
         return -1;
     }
@@ -273,7 +275,10 @@ void get_screen_image(struct x_connection * connection, struct screen_image * ra
 
 int reset(struct amu_viewer_setup * viewer_setup) {
     close(viewer_setup->client_socket_tcp);
-    kill(viewer_setup->screen_broadcast_process, SIGKILL);
+    if(viewer_setup->screen_broadcast_process != NULL) {
+        kill(viewer_setup->screen_broadcast_process, SIGKILL);
+    }
+    viewer_setup->screen_broadcast_process = NULL;
     setup_connections_to_x_server(viewer_setup);
 }
 

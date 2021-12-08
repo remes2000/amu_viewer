@@ -2,3 +2,5 @@ host/.idea/
 host/host
 client/.idea
 client/target
+client/*.iml
+client/dependency-reduced-pom.xml
