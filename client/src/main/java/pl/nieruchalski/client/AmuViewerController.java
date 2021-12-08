@@ -3,18 +3,19 @@ package pl.nieruchalski.client;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
+import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.control.Label;
-import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Tab;
-import javafx.scene.control.TabPane;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
+import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import pl.nieruchalski.client.domain.exception.CannotCloseConnectionWithHostException;
+import pl.nieruchalski.client.domain.exception.CannotSendFileException;
+import pl.nieruchalski.client.domain.exception.HostRefusedAccessCodeException;
 import pl.nieruchalski.client.domain.publisher.GeneralPublisher;
 import pl.nieruchalski.client.domain.publisher.NewConnectionPublisher;
 import pl.nieruchalski.client.domain.publisher.NewFramePublisher;
@@ -47,6 +48,11 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
     @FXML
     private Label udpPortLabel;
 
+    @FXML
+    private Button uploadFileButton;
+
+    private FileChooser fileChooser;
+
     private Map<Tab, ViewerHost> tabHostMap = new HashMap();
 
     public void initialize() {
@@ -56,10 +62,12 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
         ConnectionService.getInstance();
         this.displayContainer.setMaxWidth(AmuViewerClientApplication.VIEWER_WIDTH);
         this.displayContainer.setMinWidth(AmuViewerClientApplication.VIEWER_WIDTH);
+        this.initFileChooser();
         this.clearCanvas();
         tabPane.getSelectionModel().selectedItemProperty().addListener((ov, oldTab, newTab) -> {
             ViewerHost selectedHost = this.tabHostMap.get(newTab);
             HostManager.getInstance().selectHost(selectedHost);
+            this.uploadFileButton.setVisible(selectedHost != null);
             if(selectedHost != null) {
                 this.renderHost(selectedHost);
             } else {
@@ -114,6 +122,22 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
         this.udpPortLabel.setText("UDP: " + udpPortChange.getPort());
     }
 
+    private void initFileChooser() {
+        this.fileChooser = new FileChooser();
+        this.uploadFileButton.setVisible(false);
+        this.uploadFileButton.setOnMouseClicked(e -> {
+            File selectedFile = this.fileChooser.showOpenDialog(((Node) e.getTarget()).getScene().getWindow());
+            ViewerHost selectedHost = HostManager.getInstance().getSelectedHost();
+            if(selectedFile != null && selectedHost != null) {
+                try {
+                    selectedHost.sendFile(selectedFile);
+                } catch (CannotSendFileException | HostRefusedAccessCodeException err) {
+                    System.err.println("Cannot send file to host :/");
+                }
+            }
+        });
+    }
+
     private void renderHost(ViewerHost host) {
         if(host.getLastFrame() != null) {
             this.renderFrame(host.getLastFrame());
@@ -134,13 +158,5 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
         this.displayContainer.setVisible(false);
         this.display.setWidth(0);
         this.display.setHeight(0);
-//        try {
-//            Image image = new Image(new FileInputStream("test.png"));
-//            display.setWidth(image.getWidth());
-//            display.setHeight(image.getHeight());
-//            display.getGraphicsContext2D().drawImage(image, 0, 0, image.getWidth(), image.getHeight());
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
     }
 }

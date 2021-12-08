@@ -38,6 +38,13 @@
         </ScrollPane>
     </left>
     <bottom>
-        <Label fx:id="udpPortLabel"></Label>
+        <BorderPane>
+            <left>
+                <Label fx:id="udpPortLabel"></Label>
+            </left>
+            <right>
+                <Button fx:id="uploadFileButton" text="Upload file" />
+            </right>
+        </BorderPane>
     </bottom>
 </BorderPane>

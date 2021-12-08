@@ -2,10 +2,14 @@ package pl.nieruchalski.client.domain.values.event;
 
 import javafx.scene.input.KeyCode;
 import pl.nieruchalski.client.domain.exception.CannotCloseConnectionWithHostException;
+import pl.nieruchalski.client.domain.exception.CannotSendFileException;
+import pl.nieruchalski.client.domain.exception.HostRefusedAccessCodeException;
 import pl.nieruchalski.client.domain.helpers.EventCodes;
 import pl.nieruchalski.client.domain.helpers.KeyCodeMap;
 import pl.nieruchalski.client.domain.helpers.ViewerTcpSocket;
+import pl.nieruchalski.client.domain.service.FileSender;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.Socket;
 
@@ -20,12 +24,16 @@ public class ViewerHost implements AutoCloseable {
     private Integer id;
     private ViewerTcpSocket socket;
     private Integer udpPort;
+    private Integer fileTransferTcpPort;
+    private Integer accessCode;
     private Frame lastFrame;
 
-    public ViewerHost(ViewerTcpSocket socket, Integer udpPort) {
+    public ViewerHost(ViewerTcpSocket socket, Integer udpPort, Integer fileTransferTcpPort, Integer accessCode) {
         this.id = generateId();
         this.socket = socket;
         this.udpPort = udpPort;
+        this.fileTransferTcpPort = fileTransferTcpPort;
+        this.accessCode = accessCode;
     }
 
     @Override
@@ -50,7 +58,7 @@ public class ViewerHost implements AutoCloseable {
     }
 
     public Integer getFileTransferTcpPort() {
-        return null;
+        return this.fileTransferTcpPort;
     }
 
     public Integer getUdpPort() {
@@ -61,12 +69,20 @@ public class ViewerHost implements AutoCloseable {
         return lastFrame;
     }
 
+    public Integer getAccessCode() {
+        return accessCode;
+    }
+
     public void setLastFrame(Frame lastFrame) {
         this.lastFrame = lastFrame;
     }
 
     public Integer getId() {
         return this.id;
+    }
+
+    public void sendFile(File file) throws CannotSendFileException, HostRefusedAccessCodeException {
+        new FileSender(this, file).send();
     }
 
     public void mouseMove(Integer x, Integer y) {

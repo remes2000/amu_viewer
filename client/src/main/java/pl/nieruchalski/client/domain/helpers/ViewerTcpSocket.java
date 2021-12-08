@@ -2,10 +2,11 @@ package pl.nieruchalski.client.domain.helpers;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 
-public class ViewerTcpSocket {
+public class ViewerTcpSocket implements AutoCloseable {
     private Socket socket;
     private DataInputStream inputStream;
     private DataOutputStream outputStream;

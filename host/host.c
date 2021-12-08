@@ -18,6 +18,7 @@
 
 #define DEFAULT_TCP_PORT 1337
 #define DEFAULT_UDP_PORT DEFAULT_TCP_PORT + 1
+#define DEFAULT_TCP_FILE_TRANSFER_PORT DEFAULT_TCP_PORT + 2
 #define MAX_UDP_PACKET_SIZE 65535
 #define MAX_IMAGE_SIZE_WHEN_ADJUST 60535
 #define LOG(format, ...) printf("[%s] " format "\n", getFormattedTime(), ## __VA_ARGS__)
@@ -57,9 +58,11 @@ struct frame_settings {
 struct amu_viewer_setup {
     unsigned int access_code;
     int host_socket_tcp;
+    int host_socket_tcp_file_transfer;
     int host_socket_udp;
     int client_socket_tcp;
     struct sockaddr_in tcp_host_address;
+    struct sockaddr_in tcp_file_transfer_host_address;
     struct sockaddr_in udp_host_address;
     struct sockaddr_in tcp_client_address;
     struct sockaddr_in udp_client_address;
@@ -67,6 +70,8 @@ struct amu_viewer_setup {
     struct x_connection screen_broadcast_x_connection;
     int is_broadcast_possible;
     struct frame_settings frame_settings;
+    char * file_transfer_directory;
+    pid_t file_transfer_process;
 };
 
 struct screen_image {
@@ -89,12 +94,15 @@ void setup_access_code(struct amu_viewer_setup * viewer_setup);
 int setup_host_sockets(struct amu_viewer_setup * viewer_setup);
 void say_hello(struct amu_viewer_setup * viewer_setup);
 int handle_connection(struct amu_viewer_setup * viewer_setup);
-int authorize(struct amu_viewer_setup * viewer_setup);
+int authorize(struct amu_viewer_setup * viewer_setup, int tcp_socket);
 int set_udp_client_address(struct amu_viewer_setup * viewer_setup);
 int read_unsigned_int(int tcp_socket, unsigned int * dest);
 int read_unsigned_short(int tcp_socket, unsigned short * dest);
 int read_n_bytes(int tcp_socket, unsigned char * dest, unsigned int n);
+int download_file(int tcp_socket, unsigned char * filename, unsigned int file_size);
 int begin_screen_broadcast(struct amu_viewer_setup * viewer_setup, pid_t * broadcast_pid);
+int begin_file_transfer_process(struct amu_viewer_setup * viewer_setup);
+int handle_file_transfer_connection(struct amu_viewer_setup * viewer_setup, int client_file_transfer_socket);
 void send_frame(struct amu_viewer_setup * viewer_setup);
 void send_transmission_over_udp_not_possible_message(struct amu_viewer_setup * viewer_setup);
 int handle_event(unsigned short event_code, struct amu_viewer_setup * viewer_setup);
@@ -115,16 +123,21 @@ int main(int argc, char **argv) {
         return -1;
     }
     say_hello(&viewer_setup);
+    if(begin_file_transfer_process(&viewer_setup) == -1) {
+        LOG("File transfer service init failed, file transfer not possible");
+    }
     LOG("Waiting for connection...");
     while((viewer_setup.client_socket_tcp = accept(viewer_setup.host_socket_tcp, (struct sockaddr*) &viewer_setup.tcp_client_address, &socklen)) != -1) {
         if(handle_connection(&viewer_setup) == -1) {
-            close(viewer_setup.client_socket_tcp);
-            LOG("Waiting for connection...");
+            LOG("handle_connection() error");
         }
+        close(viewer_setup.client_socket_tcp);
+        LOG("Waiting for connection...");
     }
     printf("accept() failed");
     close(viewer_setup.client_socket_tcp);
     close(viewer_setup.host_socket_tcp);
+    close(viewer_setup.host_socket_tcp_file_transfer);
     close(viewer_setup.host_socket_udp);
     return 0;
 }
@@ -145,11 +158,16 @@ int setup(int argc, char **argv, struct amu_viewer_setup * viewer_setup) {
 int setup_host_address(int argc, char **argv, struct amu_viewer_setup * viewer_setup) {
     unsigned short tcp_port = DEFAULT_TCP_PORT;
     unsigned short udp_port = DEFAULT_UDP_PORT;
+    unsigned short tcp_file_transfer_port = DEFAULT_TCP_FILE_TRANSFER_PORT;
+
     if(argc > 1) {
         tcp_port = atoi(argv[1]);
     }
     if(argc > 2) {
         udp_port = atoi(argv[2]);
+    }
+    if(argc > 3) {
+        tcp_file_transfer_port = atoi(argv[3]);
     }
     viewer_setup->tcp_host_address.sin_family = AF_INET;
     viewer_setup->tcp_host_address.sin_port = htons(tcp_port);
@@ -157,10 +175,14 @@ int setup_host_address(int argc, char **argv, struct amu_viewer_setup * viewer_s
     viewer_setup->udp_host_address.sin_family = AF_INET;
     viewer_setup->udp_host_address.sin_port = htons(udp_port);
     viewer_setup->udp_host_address.sin_addr.s_addr = INADDR_ANY;
+    viewer_setup->tcp_file_transfer_host_address.sin_family = AF_INET;
+    viewer_setup->tcp_file_transfer_host_address.sin_port = htons(tcp_file_transfer_port);
+    viewer_setup->tcp_file_transfer_host_address.sin_addr.s_addr = INADDR_ANY;
     return 0;
 }
 
 int setup_host_sockets(struct amu_viewer_setup * viewer_setup) {
+    // host tcp socket
     viewer_setup->host_socket_tcp = socket(AF_INET, SOCK_STREAM, 0);
     if(viewer_setup->host_socket_tcp == -1) {
         printf("setup_host_sockets() failed, on tcp socket() \n");
@@ -174,6 +196,21 @@ int setup_host_sockets(struct amu_viewer_setup * viewer_setup) {
         printf("setup_host_sockets() failed, on listen() \n");
         return -1; 
     }
+    // host tcp file transfer socket
+    viewer_setup->host_socket_tcp_file_transfer = socket(AF_INET, SOCK_STREAM, 0);
+    if(viewer_setup->host_socket_tcp_file_transfer == -1) {
+        printf("setup_host_sockets() failed, on tcp file transfer socket() \n");
+        return -1;
+    }
+    if(bind(viewer_setup->host_socket_tcp_file_transfer, (struct sockaddr*) &viewer_setup->tcp_file_transfer_host_address, sizeof(viewer_setup->tcp_file_transfer_host_address)) == -1) {
+        printf("setup_host_sockets() failed, on tcp file transfer bind() \n");
+        return -1;
+    }
+    if (listen(viewer_setup->host_socket_tcp_file_transfer, 1) == -1) {
+        printf("setup_host_sockets() failed, on listen() tcp file transfer \n");
+        return -1;
+    }
+    // host udp socket
     viewer_setup->host_socket_udp = socket(AF_INET, SOCK_DGRAM, 0);
     if(viewer_setup->host_socket_udp == -1) {
         printf("setup_host_sockets() failed, on udp socket() \n");
@@ -237,6 +274,7 @@ void say_hello(struct amu_viewer_setup * viewer_setup) {
     printf("---=== AMU_VIEWER ===---- \n");
     printf("Listening on port %d \n", ntohs(viewer_setup->tcp_host_address.sin_port));
     printf("UDP port: %d \n", ntohs(viewer_setup->udp_host_address.sin_port));
+    printf("File transfer port: %d \n", ntohs(viewer_setup->tcp_file_transfer_host_address.sin_port));
     printf("Access code = %d\n", viewer_setup->access_code);
     if(viewer_setup->is_broadcast_possible) {
         printf("Frames will be sending in jpeg files, scale = %d quality = %d \n", viewer_setup->frame_settings.scale, viewer_setup->frame_settings.jpeg_quality);
@@ -250,7 +288,7 @@ int handle_connection(struct amu_viewer_setup * viewer_setup) {
     int authorization_result;
 
     LOG("Client %s connected", inet_ntoa(viewer_setup->tcp_client_address.sin_addr));
-    authorization_result = authorize(viewer_setup);
+    authorization_result = authorize(viewer_setup, viewer_setup->client_socket_tcp);
     if(authorization_result == -1) {
         LOG("Authorization error");
         return -1;
@@ -258,6 +296,10 @@ int handle_connection(struct amu_viewer_setup * viewer_setup) {
     if(authorization_result == 1) {
         if(send(viewer_setup->client_socket_tcp, &viewer_setup->udp_host_address.sin_port, sizeof(viewer_setup->udp_host_address.sin_port), 0) == -1) {
             LOG("An error occured while sending udp port to client");
+            return -1;
+        }
+        if(send(viewer_setup->client_socket_tcp, &viewer_setup->tcp_file_transfer_host_address.sin_port, sizeof(viewer_setup->tcp_file_transfer_host_address.sin_port), 0) == -1) {
+            LOG("An error occured while sending tcp file transfer port to client");
             return -1;
         }
         if(set_udp_client_address(viewer_setup) == -1) {
@@ -284,12 +326,12 @@ int handle_connection(struct amu_viewer_setup * viewer_setup) {
     }
 }
 
-int authorize(struct amu_viewer_setup * viewer_setup) {
+int authorize(struct amu_viewer_setup * viewer_setup, int tcp_socket) {
     uint8_t authorization_result;
     unsigned int provided_access_code;
 
     LOG("Waiting for access code...");
-    if(read_unsigned_int(viewer_setup->client_socket_tcp, &provided_access_code) == -1) {
+    if(read_unsigned_int(tcp_socket, &provided_access_code) == -1) {
         return -1;
     }
     LOG("Provided access code: %u", provided_access_code);
@@ -300,7 +342,7 @@ int authorize(struct amu_viewer_setup * viewer_setup) {
         LOG("Permission denied");
         authorization_result = 0;
     }
-    if(send(viewer_setup->client_socket_tcp, &authorization_result, sizeof(authorization_result), 0) != sizeof(authorization_result)) {
+    if(send(tcp_socket, &authorization_result, sizeof(authorization_result), 0) != sizeof(authorization_result)) {
         return -1;
     }
     return authorization_result;
@@ -349,6 +391,93 @@ int read_n_bytes(int tcp_socket, unsigned char * dest, unsigned int n) {
         total_readed_bytes += readed_bytes;
     }
     return 0;
+}
+
+int download_file(int tcp_socket, unsigned char * filename, unsigned int file_size) {
+    int total_readed_bytes = 0;
+    int readed_bytes = 0;
+    char buf[512];
+    FILE *file;
+
+    if((file = fopen(filename, "wb")) == NULL) {
+        LOG("Cannot open file %s", filename);
+        return -1;
+    }
+
+    while(total_readed_bytes < file_size) {
+        readed_bytes = recv(tcp_socket, buf, 512, 0);
+        if(readed_bytes == -1) {
+            fclose(file);
+            return -1;
+        }
+        fwrite(buf, readed_bytes, 1, file);
+        total_readed_bytes += readed_bytes;
+    }
+    fclose(file);
+}
+
+int begin_file_transfer_process(struct amu_viewer_setup * viewer_setup) {
+    LOG("File transfer service, creating child process...");
+    pid_t pid;
+    if((pid = fork()) == -1) {
+        LOG("fork() failed");
+        return -1;
+    }
+    if(pid == 0) {
+        int file_transfer_client_socket_tcp;
+        while((file_transfer_client_socket_tcp = accept(viewer_setup->host_socket_tcp_file_transfer, (struct sockaddr*) &viewer_setup->tcp_file_transfer_host_address, &socklen)) != -1) {
+            LOG("File transfer connection begin");
+            if(handle_file_transfer_connection(viewer_setup, file_transfer_client_socket_tcp) == -1) {
+                LOG("handle_file_transfer_connection() error");
+            }
+            LOG("File transfer connection end");
+            close(file_transfer_client_socket_tcp);
+        }
+        LOG("file transfer accept() failed");
+        close(viewer_setup->host_socket_tcp_file_transfer);
+        exit(0);
+    }
+    viewer_setup->file_transfer_process = pid;
+    LOG("File transfer process pid = %d", pid);
+    return 0;
+}
+
+int handle_file_transfer_connection(struct amu_viewer_setup * viewer_setup, int client_file_transfer_socket) {
+    int authorization_result;
+    unsigned int file_size = 0, filename_size = 0;
+    char * filename;
+
+    authorization_result = authorize(viewer_setup, client_file_transfer_socket);
+    if(authorization_result == -1) {
+        LOG("Authorization error");
+        return -1;
+    }
+    if(authorization_result == 1) {
+        if(read_unsigned_int(client_file_transfer_socket, &filename_size) == -1) {
+            LOG("Error while reading filename size");
+            return -1;
+        }
+        filename = (char *) malloc((filename_size+1) * sizeof(char));
+        if(read_n_bytes(client_file_transfer_socket, filename, filename_size) == -1) {
+            LOG("Error while reading filename");
+            free(filename);
+            return -1;
+        }
+        filename[filename_size] = '\0';
+        LOG("Downloading file %s...", filename);
+        if(read_unsigned_int(client_file_transfer_socket, &file_size) == -1) {
+            LOG("Error while reading file size");
+            free(filename);
+            return -1;
+        }
+        if(download_file(client_file_transfer_socket, filename, file_size) == -1) {
+            LOG("Error while downloading file");
+            free(filename);
+            return -1;
+        }
+        LOG("File %s downloaded", filename);
+        free(filename);
+    }
 }
 
 int begin_screen_broadcast(struct amu_viewer_setup * viewer_setup, pid_t * broadcast_pid) {
