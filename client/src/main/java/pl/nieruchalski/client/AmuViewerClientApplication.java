@@ -21,6 +21,9 @@ public class AmuViewerClientApplication extends Application {
         stage.setTitle("amu_viewer");
         stage.setScene(scene);
         stage.show();
+        stage.setOnCloseRequest(e -> {
+            ConnectionService.getInstance().closeAllConnectionsSilent();
+        });
     }
 
     public static void main(String[] args) {

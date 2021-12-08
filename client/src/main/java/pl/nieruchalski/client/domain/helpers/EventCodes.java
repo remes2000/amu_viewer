@@ -8,4 +8,5 @@ public class EventCodes {
     public static short MOUSE_RIGHT_RELEASED = 4;
     public static short KEY_PRESSED = 5;
     public static short KEY_RELEASED = 6;
+    public static short CLOSE_CONNECTION = 7;
 }

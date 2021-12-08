@@ -39,6 +39,7 @@ public class ViewerHost implements AutoCloseable {
     @Override
     public void close() throws CannotCloseConnectionWithHostException {
         try {
+            socket.getOutputStream().writeShort(EventCodes.CLOSE_CONNECTION);
             socket.close();
         } catch (IOException e) {
             throw new CannotCloseConnectionWithHostException();

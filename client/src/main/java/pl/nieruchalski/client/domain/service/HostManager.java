@@ -41,6 +41,10 @@ public class HostManager {
         activeHosts.remove(host);
     }
 
+    public Set<ViewerHost> getAllActiveHosts() {
+        return this.activeHosts;
+    }
+
     public ViewerHost getPacketSender(DatagramPacket packet) {
         String packetIp = packet.getAddress().getHostAddress();
         Integer packetPort = packet.getPort();

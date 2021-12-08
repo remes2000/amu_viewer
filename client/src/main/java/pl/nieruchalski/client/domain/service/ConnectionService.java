@@ -69,4 +69,12 @@ public class ConnectionService {
         host.close();
         HostManager.getInstance().unregisterHost(host);
     }
+
+    public void closeAllConnectionsSilent() {
+        try {
+            for(ViewerHost host : HostManager.getInstance().getAllActiveHosts()) {
+                this.closeConnection(host);
+            }
+        } catch (CannotCloseConnectionWithHostException e) {}
+    }
 }
