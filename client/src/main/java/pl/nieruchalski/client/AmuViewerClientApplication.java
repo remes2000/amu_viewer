@@ -15,11 +15,13 @@ public class AmuViewerClientApplication extends Application {
     @Override
     public void start(Stage stage) throws IOException {
         FXMLLoader fxmlLoader = new FXMLLoader(AmuViewerClientApplication.class.getResource("amu-viewer-view.fxml"));
-        Scene scene = new Scene(fxmlLoader.load(), VIEWER_WIDTH, VIEWER_HEIGHT);
+        Scene scene = new Scene(fxmlLoader.load());
         EventBinder.getInstance().setScene(scene);
         EventBinder.getInstance().bind();
         stage.setTitle("amu_viewer");
         stage.setScene(scene);
+        stage.setWidth(VIEWER_WIDTH);
+        stage.setHeight(VIEWER_HEIGHT);
         stage.show();
         stage.setOnCloseRequest(e -> {
             ConnectionService.getInstance().closeAllConnectionsSilent();

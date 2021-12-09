@@ -60,8 +60,6 @@ public class AmuViewerController implements NewConnectionSubscriber, NewFrameSub
         NewFramePublisher.getInstance().subscribe(this);
         GeneralPublisher.getInstance().subscribe(this);
         ConnectionService.getInstance();
-        this.displayContainer.setMaxWidth(AmuViewerClientApplication.VIEWER_WIDTH);
-        this.displayContainer.setMinWidth(AmuViewerClientApplication.VIEWER_WIDTH);
         this.initFileChooser();
         this.clearCanvas();
         tabPane.getSelectionModel().selectedItemProperty().addListener((ov, oldTab, newTab) -> {

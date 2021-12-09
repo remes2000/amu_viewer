@@ -32,11 +32,11 @@
             </bottom>
         </BorderPane>
     </top>
-    <left>
-        <ScrollPane fx:id="displayContainer">
+    <center>
+        <ScrollPane fx:id="displayContainer" fitToWidth="true" fitToHeight="true">
             <Canvas fx:id="display" />
         </ScrollPane>
-    </left>
+    </center>
     <bottom>
         <BorderPane>
             <left>

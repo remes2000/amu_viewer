@@ -20,7 +20,7 @@
 #define DEFAULT_UDP_PORT DEFAULT_TCP_PORT + 1
 #define DEFAULT_TCP_FILE_TRANSFER_PORT DEFAULT_TCP_PORT + 2
 #define MAX_UDP_PACKET_SIZE 65535
-#define MAX_IMAGE_SIZE_WHEN_ADJUST 60535
+#define MAX_IMAGE_SIZE_WHEN_ADJUST 40535
 #define LOG(format, ...) printf("[%s] " format "\n", getFormattedTime(), ## __VA_ARGS__)
 #define JPEG_START_QUALITY 20
 #define JPEG_DOWN_QUALITY 5
@@ -89,7 +89,7 @@ socklen_t socklen = sizeof(struct sockaddr_in);
 int setup(int argc, char **argv, struct amu_viewer_setup * viewer_setup);
 int setup_host_address(int argc, char **argv, struct amu_viewer_setup * viewer_setup);
 void setup_connections_to_x_server(struct amu_viewer_setup * viewer_setup);
-void setup_adjust_frame_settings(struct amu_viewer_setup * viewer_setup);
+void setup_adjust_frame_settings(struct amu_viewer_setup * viewer_setup, int argc, char **argv);
 void get_screen_image(struct x_connection * connection, struct screen_image * raw_screen_image);
 void setup_access_code(struct amu_viewer_setup * viewer_setup);
 int setup_host_sockets(struct amu_viewer_setup * viewer_setup);
@@ -154,7 +154,7 @@ int setup(int argc, char **argv, struct amu_viewer_setup * viewer_setup) {
         return -1;
     }
     setup_connections_to_x_server(viewer_setup);
-    setup_adjust_frame_settings(viewer_setup);
+    setup_adjust_frame_settings(viewer_setup, argc, argv);
     setup_access_code(viewer_setup);
     return 0;
 }
@@ -241,7 +241,13 @@ void setup_access_code(struct amu_viewer_setup * viewer_setup) {
     viewer_setup->access_code = (rand() % 901) + 100;
 }
 
-void setup_adjust_frame_settings(struct amu_viewer_setup * viewer_setup) {
+void setup_adjust_frame_settings(struct amu_viewer_setup * viewer_setup, int argc, char **argv) {
+    if(argc > 5) {
+        viewer_setup->frame_settings.scale = atoi(argv[4]);
+        viewer_setup->frame_settings.jpeg_quality = atoi(argv[5]);
+        viewer_setup->is_broadcast_possible = 1;
+        return;
+    }
     int scale_possibilities[] = {1, 2, 4, 8, 16};
     struct screen_image raw_screen_image;
     struct frame frame;
@@ -525,7 +531,7 @@ void send_frame(struct amu_viewer_setup * viewer_setup) {
                (struct sockaddr*) &viewer_setup->udp_client_address,
                sizeof(viewer_setup->udp_client_address));
     } else {
-        LOG("Frame could not be sent because of too big frame size (%d). Downgrading jpeg quality from %d to %d", screen_frame.image_size);
+        LOG("Frame could not be sent because of too big frame size (%d).", screen_frame.image_size);
     }
     free(screen_frame.image);
 }

@@ -29,7 +29,6 @@ public class FileSender {
                 socket.close();
                 throw new HostRefusedAccessCodeException();
             }
-            System.out.println(this.file.length());
             socket.getOutputStream().writeInt(this.file.getName().length());
             socket.getOutputStream().writeBytes(this.file.getName());
             socket.getOutputStream().writeInt((int) this.file.length()); // I know I shouldn't do it, don't have time to implement 64-byte ntoh method client side
